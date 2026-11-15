@@ -94,6 +94,10 @@ blobs/blob_apply.bin  save installer + compressed CFS stage
 
 The storage partition is 4 MB. The board resets after flashing.
 
+kaiHEN only arms for **Switch 2 games**: titles whose program ID has the `0x04`
+family prefix (`0x04xxxxxxxxxxxxxx`). A Switch 1 game (`0x0100...`) runs from its
+own process and is not a supported target for this chain.
+
 ## 3. Install the autoloader save
 
 1. Insert the SD card into the console.
@@ -110,8 +114,16 @@ The save runs:
 CivSwitchFS -> prepare kaiHEN -> boot kaiHEN -> hbmenu
 ```
 
-The same-session CFS stage is intentionally not used: running CFS immediately
-after the save install can freeze the console. The save is the hand-off point.
+When it finishes, the console shows:
+
+```text
+AUTOLOADER: kaiHEN installation complete. You can close Civ7 now.
+```
+
+The save is offline: it does not wait for a network after the autoloader.
+The same-session CFS stage is intentionally not used because running CFS
+immediately after the save install can freeze the console. The save is the
+hand-off point.
 
 ## Fallback
 

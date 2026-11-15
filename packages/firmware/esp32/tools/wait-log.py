@@ -28,7 +28,7 @@ import time
 import tty
 
 SUCCESS = (
-    "AUTOLOADER: HEN: boot sequence complete",
+    "AUTOLOADER: kaiHEN installation complete. You can close Civ7 now.",
 )
 FAILURE = (
     "AUTOLOADER: ERROR:",

@@ -237,9 +237,17 @@ it, choose **Load Game**, and load `XSTRIG.Civ7Save`; the save runs:
 CivSwitchFS -> prepare kaiHEN -> boot kaiHEN
 ```
 
-The same-session CFS stage is intentionally not used because it can freeze
-the console. If the persistent save causes FS canary failures, the standard
-save is a fallback: use `make_install_blobs.py` and the `save` stage.
+When it finishes, the console shows:
+
+```text
+AUTOLOADER: kaiHEN installation complete. You can close Civ7 now.
+```
+
+The save is offline: it does not fall through to the TCP loader's
+`network down` wait loop. The same-session CFS stage is intentionally not
+used because it can freeze the console. If the persistent save causes FS
+canary failures, the standard save is a fallback: use
+`make_install_blobs.py` and the `save` stage.
 
 The SD card must be inserted before Load Game. It must contain `hbmenu.nro`
 and the `kaihen/` files from `packages/sdcard/contents/`. Without the card,
