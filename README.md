@@ -200,21 +200,3 @@ transport is ported from GPL-3.0-only / AGPL-3.0 projects, so
 `packages/firmware/esp32` is distributed under GPL-3.0 (and the pokeldn-derived
 part under AGPL-3.0). Third-party components keep their own licenses; see
 `THIRD_PARTY_NOTICES.md` and `packages/sdcard/licenses/`.
-
-
-## Standing on the shoulders of giants
-
-- [Gezine](https://github.com/Gezine/CivSwitch) for CivSwitch, the Civ7
-  entrypoint.
-- [Nerisma](https://github.com/ItsNerisma/CivSwitchFS) for native fs implementation
-- [civswitch-kit](https://gitee.com/mza1010/civswitch-kit), the original Civ7
-  FS kit, based on slapah/Hokage's work, which is itself based on ns2jb.
-- [civ7-fs](https://github.com/HerXayah/civ7-fs), the Civ7 FS port this
-  repository builds on.
-- [kurumuz](https://github.com/kurumuz) for kaiHEN and his ns2jb fork.
-- [pepsipu](https://gitlab.com/pepsipu/ns2jb) for discovering nsj2b vuln, and the ns2jb codebase.
-- [ossieandco](https://github.com/ossieandco) for the wave timing changes
-  (earlier release step and trigger shift, from per-wave trace analysis showing
-  slow pin requests pushed the guard past the hole), the LAN auto-restart
-  script, and the retry console.
-- LLMs were involved in the development of this. Please don't use it if you don't trust it.
