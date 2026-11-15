@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-11-15",
+  "note": "Draft while the submodule working trees carry the local overlay/patches. Replace base_commit with the fork commit after the changes are committed and pushed.",
+  "upstream": {
+    "CivSwitch": {
+      "url": "git@github.com:SeanHeuc/CivSwitch.git",
+      "base_commit": "2a9a359e3dd8d5dce3cbf5a65920c252806bb042"
+    },
+    "CivSwitchFS": {
+      "url": "git@github.com:SeanHeuc/CivSwitchFS.git",
+      "base_commit": "cdc3397306d0be3c10feea82d112c80e47558653",
+      "overlay": [
+        "src/core.js",
+        "src/core/autoloader.mjs",
+        "src/core/autoloader-fs.mjs",
+        "src/core/autoloader-kaihen.mjs",
+        "src/core/config.mjs",
+        "src/core/promotion.mjs",
+        "src/core/visuals.mjs"
+      ]
+    },
+    "kaihen": {
+      "url": "git@github.com:SeanHeuc/kaihen.git",
+      "base_commit": "5ac772560698b325551db014478a5a43e941474c",
+      "patches": [
+        "common/code_mount_request.hpp",
+        "common/loader_gate.hpp",
+        "common/sd_writer.cpp",
+        "common/sd_writer.hpp",
+        "hen/source/log.cpp",
+        "hen/source/log.hpp",
+        "hen/source/server.cpp",
+        "ro/source/control.cpp",
+        "ro/source/control.h",
+        "ro/source/fs_memory.cpp",
+        "ro/source/mapping.cpp"
+      ]
+    }
+  },
+  "sdcard": {
+    "game/main": {
+      "project": "ouncebrew/ounce-hbloader",
+      "sha256": "f72ac5f94b8263a83e2ae698ca5ef91b192127d01778105293419d896247563c"
+    },
+    "hbmenu.nro": {
+      "project": "ouncebrew/ounce-hbmenu",
+      "sha256": "274df7a0e95334c4746f98552e57d3d9c897d9ae98b7d247aa8e1841e63cb797"
+    },
+    "hen/main": {
+      "project": "SeanHeuc/kaihen",
+      "sha256": "7220bbc935cb364aeb1f7381d442ea4e22c6bf767e18e4eb5dd8a6bb44a9265a"
+    },
+    "ro/main": {
+      "project": "SeanHeuc/kaihen",
+      "sha256": "a9a60df28f942b5a26ce55772d2185203182d4fa9feba5a2b574b7e39eb74f42"
+    },
+    "bootstrap.bin": {
+      "project": "SeanHeuc/kaihen",
+      "sha256": "dee76b820d4504e39ba360e238226a0c96665a443bfd0cb334e34ba38b4c068d"
+    },
+    "plugins/ftpd.nso": {
+      "project": "OunceShell/switch2/third_party/ftpd",
+      "sha256": "17e50a96491f4ec49dfc5be3ea05141a106aee6e401c7c6d468da932a3490cee"
+    }
+  }
+}

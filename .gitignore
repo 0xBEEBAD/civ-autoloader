@@ -1,0 +1,34 @@
+# Firmware build output and generated headers
+packages/firmware/esp32/build/
+packages/firmware/esp32/blobs/
+packages/firmware/esp32/sdkconfig
+packages/firmware/esp32/sdkconfig.old
+packages/firmware/esp32/managed_components/
+packages/firmware/esp32/dependencies.lock
+packages/firmware/esp32/main/keys.h
+packages/firmware/esp32/main/chat_payload.h
+packages/firmware/esp32/main/build_time.h
+
+# User-provided keys and local secrets.  Never commit these.
+packages/firmware/esp32/prod.keys
+prod.keys
+*.pem
+*.key
+
+# Local logs
+logs/
+*.log
+
+# Generated SD card staging
+packages/sdcard/contents/
+
+# Node
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

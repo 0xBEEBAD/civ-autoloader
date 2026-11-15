@@ -1,0 +1,3 @@
+# kaiHEN diagnostics (read by HEN from /kaihen/hen-options.txt)
+# The log is off by default. Uncomment to append /kaihen/hen-log.txt.
+# log-sd
