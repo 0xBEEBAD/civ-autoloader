@@ -26,7 +26,7 @@ function usage() {
   --keys <file>      prod.keys (default ./prod.keys)
   --phy <radio>      Wi-Fi radio (auto-detected when there is one)
   --host <mac>       LDN host MAC (auto-selected when there is one network)
-  --ifname <name>    Temporary LDN interface (default civ7-ldn)
+  --ifname <name>    Temporary LDN interface (default civ7-autoloader-ldn)
   --blobs <dir>      Directory with blob_tpl.bin and blob_apply.bin
   --verbose          Packet and diagnostic logs
   --help             Show this text
@@ -38,7 +38,7 @@ Build the blobs first:
 function parseArgs(argv) {
     const opts = {
         keys: path.join(HERE, "prod.keys"),
-        ifname: "civ7-ldn",
+        ifname: "civ7-autoloader-ldn",
         blobs: BLOBS
     };
     const values = {
@@ -136,7 +136,7 @@ async function main(argv = process.argv.slice(2)) {
         console.log(`Payload ready (${lines.length} chat messages).`);
 
         const args = [
-            path.join(HERE, "bash", "network.sh"),
+            path.join(HERE, "bash", "network-panel.sh"),
             "--phy", phy,
             PYTHON, path.join(HERE, "ldn", "main.py"),
             "--keys", path.resolve(opts.keys),

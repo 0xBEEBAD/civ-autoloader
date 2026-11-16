@@ -10,6 +10,14 @@ import connection
 from cli import build_parser
 
 
+def error_details(error):
+    """Expose the actual association error inside a Trio exception group."""
+    nested = getattr(error, "exceptions", ())
+    if nested:
+        return "; ".join(error_details(item) for item in nested)
+    return f"{type(error).__name__}: {error}"
+
+
 def main(argv=None):
     cli = build_parser()
     args = cli.parse_args(argv)
@@ -44,9 +52,14 @@ def main(argv=None):
     )
 
     import session
+    import panel_network
     trio = importlib.import_module("trio")
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
+
+    # Isolate the temporary LDN station instead of stopping NetworkManager:
+    # Ethernet and every other connection stay up during the whole run.
+    panel_network.install_interface_guard(args.phy, args.ifname)
 
     try:
         return trio.run(session.run, args)
@@ -54,7 +67,7 @@ def main(argv=None):
         print("\nInterrupted.")
         return 130
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error: {error_details(e)}", file=sys.stderr)
         return 1
 
 

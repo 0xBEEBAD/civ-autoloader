@@ -1,0 +1,33 @@
+{
+  "format": "civ-autoloader.engine",
+  "apiVersion": 1,
+  "id": "nro-ldn",
+  "name": "Switch 1 homebrew over local wireless",
+  "version": "0.2.0",
+  "entry": "civ-autoloader-nx.nro",
+  "runtime": "libnx",
+  "platforms": ["switch1-homebrew"],
+  "consolePort": 9027,
+  "transport": "ldn",
+  "description": "A second console joins the Civ VII lobby as a Switch 1 homebrew app and streams the save over LDN UDP :9027.",
+  "requirements": {
+    "os": "Switch 1 with homebrew access",
+    "modules": "ldn_mitm and any other ldn:u MITM removed, console rebooted",
+    "launch": "Album (applet mode), or a title override of Civilization VII itself",
+    "keys": "none",
+    "blobs": "embedded in the NRO"
+  },
+  "provides": {
+    "stages": ["persist"],
+    "confirmation": "I:OK"
+  },
+  "networkImpact": {
+    "releases": "the LDN station only",
+    "keeps": "everything else",
+    "restores": "handled by the console when the app exits"
+  },
+  "notes": [
+    "Replaces every Civilization VII single-player save.",
+    "The save upload stays on the LDN link; no Wi-Fi or PC is involved."
+  ]
+}

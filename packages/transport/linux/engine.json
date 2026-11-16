@@ -1,0 +1,33 @@
+{
+  "format": "civ-autoloader.engine",
+  "apiVersion": 1,
+  "id": "linux-ldn",
+  "name": "Linux PC over local wireless",
+  "version": "0.2.0",
+  "entry": "index.js",
+  "runtime": "node",
+  "platforms": ["linux-x64", "linux-arm64"],
+  "consolePort": 9027,
+  "transport": "ldn",
+  "description": "Joins the Civ VII wireless lobby with a Wi-Fi radio and streams the save over LDN UDP :9027.",
+  "requirements": {
+    "os": "Linux with NetworkManager and one nl80211 Wi-Fi radio (WSL is not supported)",
+    "python": "3.12+ with venv",
+    "capabilities": "cap_net_admin + cap_net_raw on ldn/.venv/bin/python-ldn",
+    "keys": "prod.keys with aes_kek_generation_source, aes_key_generation_source, master_key_00, master_key_12",
+    "blobs": "packages/firmware/esp32/blobs/blob_tpl.bin and blob_apply.bin"
+  },
+  "provides": {
+    "stages": ["persist"],
+    "confirmation": "I:OK"
+  },
+  "networkImpact": {
+    "releases": "only the selected Wi-Fi radio; NetworkManager keeps it unmanaged for the run",
+    "keeps": "Ethernet and every other connection",
+    "restores": "the saved profile, its link state and its managed flag"
+  },
+  "notes": [
+    "The persistent save is installed; close Civ VII, reopen it and Load Game to run CivSwitchFS and kaiHEN.",
+    "The temporary interface is civ7-autoloader-ldn and is removed through netlink on exit."
+  ]
+}

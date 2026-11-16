@@ -44,3 +44,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Linux LDN helper cache
+packages/transport/linux/ldn/__pycache__/

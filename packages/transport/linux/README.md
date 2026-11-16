@@ -8,12 +8,15 @@ entry point.
 ## Layout
 
 ```text
-index.js          driver: blobs -> bash/network.sh -> ldn/main.py
-build-payload.js  shared (../build-payload.js)
-compress.js       shared (../compress.js)
-bash/network.sh   release/restore NetworkManager and the Wi-Fi radio
-bash/setup.sh     Python venv + setcap
-ldn/              CivSwitchLDN's LDN client (GPL-3.0-only)
+index.js                 driver: blobs -> bash/network-panel.sh -> ldn/main.py
+engine.json              engine declaration (platforms, ports, requirements)
+build-payload.js         shared (../build-payload.js)
+compress.js              shared (../compress.js)
+bash/network-panel.sh    release/restore only the selected Wi-Fi radio
+bash/setup.sh            Python venv + setcap
+ldn/                     CivSwitchLDN's LDN client (GPL-3.0-only)
+ldn/panel_network.py     keeps the temporary LDN interface out of
+                         NetworkManager's view
 ```
 
 `ldn/` is vendored from
@@ -74,4 +77,7 @@ from `blob_tpl.bin` / `blob_apply.bin`.
 - `Needs root or CAP_NET_ADMIN + CAP_NET_RAW` — rerun `npm install`, or run
   `sudo setcap cap_net_admin,cap_net_raw=ep ldn/.venv/bin/python-ldn`.
 - Wi-Fi does not come back — reconnect manually; the trap prints a warning.
+  Ethernet stays up the whole time, so a remote shell survives either way.
+- `A previous LDN interface still exists` — a stale `civ7-autoloader-ldn` was
+  left behind. Restore Wi-Fi (or reboot) before starting another run.
 - `Multiple LDN networks found` — pass `--host <mac>`.

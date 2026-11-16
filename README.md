@@ -43,6 +43,7 @@ packages/
     nro/             Switch 1 homebrew entry (untested)
     build-payload.js shared chat payload builder
     compress.js      shared chat compressor
+    list-engines.js  reads every engine.json
   sdcard/            SD card staging and pinned prebuilt binaries
   userland/          notes for the CivSwitch userland loader
   fs/                notes for the CivSwitchFS stage
@@ -53,6 +54,19 @@ third_party/
   CivSwitchFS/       fork: FS elevation + autoloader overlay
   kaihen/            fork: HEN / RO / bootstrap
 docs/                architecture, build, flashing, compatibility
+```
+
+Each entry declares itself in an `engine.json`:
+
+```sh
+node packages/transport/list-engines.js
+```
+
+```text
+id         name                                   platforms              port  status   tested
+esp32-ldn  ESP32-S3 board over local wireless     esp32s3                9027  present  yes
+linux-ldn  Linux PC over local wireless           linux-x64,linux-arm64  9027  present  no
+nro-ldn    Switch 1 homebrew over local wireless  switch1-homebrew       9027  present  no
 ```
 
 ## 1. Prepare the SD card

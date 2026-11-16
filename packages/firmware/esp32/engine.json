@@ -1,0 +1,32 @@
+{
+  "format": "civ-autoloader.engine",
+  "apiVersion": 1,
+  "id": "esp32-ldn",
+  "name": "ESP32-S3 board over local wireless",
+  "version": "0.2.0",
+  "entry": "packages/firmware/esp32",
+  "runtime": "esp-idf",
+  "platforms": ["esp32s3"],
+  "consolePort": 9027,
+  "transport": "ldn",
+  "description": "A dedicated board joins the Civ VII wireless lobby and streams the save over LDN UDP :9027. No PC, no network, no keys on the console.",
+  "requirements": {
+    "hardware": "ESP32-S3 with 16 MB flash",
+    "toolchain": "ESP-IDF v6.1",
+    "keys": "prod.keys at build time only (baked into keys.h, never committed)",
+    "blobs": "built from third_party/CivSwitch and third_party/CivSwitchFS"
+  },
+  "provides": {
+    "stages": ["persist"],
+    "confirmation": "I:OK"
+  },
+  "networkImpact": {
+    "releases": "nothing on the host; the board uses its own radio",
+    "keeps": "all host networking",
+    "restores": "not applicable"
+  },
+  "notes": [
+    "The only entry exercised on hardware so far.",
+    "Fully offline: the board never leaves the local-wireless link."
+  ]
+}

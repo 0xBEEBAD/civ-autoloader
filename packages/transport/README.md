@@ -17,11 +17,24 @@ Only the ESP32 path has been run on hardware so far. The Linux and NRO paths
 build and share the same protocol code, but nobody has completed an install
 with them.
 
+## Discovering the entries
+
+Every entry declares itself in an `engine.json` (transport, platforms, ports,
+requirements, the stage it provides):
+
+```sh
+node packages/transport/list-engines.js
+```
+
+Adding a transport means adding a directory with an `engine.json`; nothing is
+hard-coded to a specific one.
+
 ## Shared pieces
 
 ```text
 packages/transport/build-payload.js   core.js + UDP receiver -> chat lines
 packages/transport/compress.js        terser + deflateRaw + base25 chunking
+packages/transport/list-engines.js    reads every engine.json
 packages/firmware/esp32/tools/udp_loader.js   UDP :9027 receiver and stages
 ```
 
