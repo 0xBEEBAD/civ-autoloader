@@ -35,13 +35,14 @@ The resulting SD layout:
 
 ## hbmenu version
 
-`hbmenu.nro` is ounce-hbmenu **d7e10c0**. That build looks up the system
-language at startup through `setMakeLanguage`, which returns 2345-0011 on
-consoles whose language is not in the settings service's list; the menu then
-does not start.
+`hbmenu.nro` is from the **kaiHEN 20261116** release: ounce-hbmenu
+`43845d2`, which no longer looks up the system language at startup. The
+previous build (`d7e10c0`) called `setMakeLanguage`, which returns
+2345-0011 on consoles whose language is not in the settings service's list
+for applications, and the menu then did not start.
 
-Upstream kaiHEN moved to **43845d2**, which drops the lookup. Replace the
-vendor file when a Switch 2 build of that commit is available; the rest of the
-chain is unchanged.
+If you replace the file yourself, take it from a kaiHEN release, not from a
+raw ounce-hbmenu checkout: the Switch 2 build needs portlibs that the plain
+devkitPro image does not ship.
 
 OunceShell is intentionally not included.
