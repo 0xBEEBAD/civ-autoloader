@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 async def run(args, network):
-    """Send the lobby handshake and chat while the LDN link is open."""
+    """Send the lobby handshake, chat, then the save, all on the live LDN link."""
     host_ip = str(network.info().participants[0].ip_address)
     local_ip = str(network.participant().ip_address)
     chat_delay = getattr(args, "chat_delay_ms", DEFAULT_CHAT_DELAY_MS) / 1000
@@ -44,6 +44,8 @@ async def run(args, network):
     if result != 0 or args.installer_template is None:
         return result
 
+    # Same as the ESP32 and NRO: stream the save over LDN :9027 while the
+    # link is still up. No TCP, no Wi-Fi, no prod.keys beyond LDN joining.
     template_b64 = args.installer_template.read_bytes()
     apply_b64 = args.installer_apply.read_bytes()
     return await send_installer_over_ldn(args.ifname, local_ip, host_ip, template_b64, apply_b64)
@@ -63,7 +65,9 @@ async def send_installer_over_ldn(ifname, local_ip, host_ip, template_b64, apply
         return kind.encode("ascii") + str(index).encode("ascii") + b":" + data
 
     target = (host_ip, INSTALLER_PORT)
-    header = f"A{len(template_chunks)}:{len(apply_chunks)}:{local_ip}".encode("ascii")
+    # Our receiver accepts both forms; use the 5-field one so the CFS/start
+    # stage counts are explicit (this client sends neither).
+    header = f"A{len(template_chunks)}:{len(apply_chunks)}:0:0:{local_ip}".encode("ascii")
     with trio.socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode() + b"\0")
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 512 * 1024)
@@ -146,7 +150,12 @@ async def send_installer_over_ldn(ifname, local_ip, host_ip, template_b64, apply
                 f"with {retry_sends} retransmission(s).",
                 flush=True,
             )
-            print("Persistence installed over LDN (INSTALL DONE).", flush=True)
+            print("Persistent autoloader save installed (INSTALL DONE).", flush=True)
+            print("", flush=True)
+            print("On the console:", flush=True)
+            print("  1. Close Civ VII completely.", flush=True)
+            print("  2. Reopen it and choose Load Game.", flush=True)
+            print("  3. Load XSTRIG.Civ7Save.", flush=True)
             return 0
         if install_status == "error":
             raise RuntimeError("The console reported that the persistence installer failed.")

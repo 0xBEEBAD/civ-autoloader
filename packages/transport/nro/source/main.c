@@ -354,19 +354,16 @@ int main(int argc, char **argv) {
             redraw = true;
         }
         if ((keys & HidNpadButton_ZR) && game_joined) {
+            // Same flow as the ESP32: send the payload and the save over the
+            // live LDN link, then let the user restart the game and Load Game.
+            LdnIpv4Address host = networks[selected].nodes[0].ip_addr;
             game_result = game_send(true, show_progress);
             bool loader_sent = game_result.completed;
-            close_station();
             game_tested = true;
             install_tested = false;
-            if (ldn_initialized) {
-                ldnExit();
-                ldn_initialized = false;
-            }
-            network_count = 0;
-            user_scanned = false;
             if (loader_sent) {
-                install_result = installer_run(show_install_progress);
+                install_result = installer_run_over_ldn(host,
+                                                        show_install_progress);
                 install_tested = true;
             }
             redraw = true;

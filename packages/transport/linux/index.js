@@ -155,8 +155,7 @@ async function main(argv = process.argv.slice(2)) {
         console.log("  1. Close Civ VII completely.");
         console.log("  2. Reopen it and choose Load Game.");
         console.log("  3. Load XSTRIG.Civ7Save.");
-        return 0;
-    } finally {
+        return 0;    } finally {
         fs.rmSync(assets, { recursive: true, force: true });
     }
 }

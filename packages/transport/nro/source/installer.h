@@ -15,6 +15,11 @@ typedef struct {
 typedef void (*InstallerProgress)(const char *message, unsigned step,
                                   unsigned total);
 
-InstallerResult installer_run(InstallerProgress on_progress);
+/// Send the persistent autoloader save over the LDN link, exactly like the
+/// ESP32 firmware: bind the LDN local address on :9027, send the A header,
+/// stream the template and installer chunks, repair NAKs, and wait for the
+/// console's I:OK confirmation. The caller must keep LDN connected.
+InstallerResult installer_run_over_ldn(LdnIpv4Address host,
+                                       InstallerProgress on_progress);
 
 #endif

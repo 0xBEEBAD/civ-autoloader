@@ -43,6 +43,9 @@ function parseArgs(argv) {
         if (values[arg]) {
             if (!argv[i + 1]) throw new Error(`Missing value for ${arg}`);
             opts[values[arg]] = argv[++i];
+        } else if (arg === "--plain") {
+            // Leave remote_js_loader() in place: the loader opens TCP :9026.
+            opts.plain = true;
         } else if (arg === "--help" || arg === "-h") {
             opts.help = true;
         } else {
@@ -52,14 +55,16 @@ function parseArgs(argv) {
     return opts;
 }
 
-async function build({ core, loader } = {}) {
+async function build({ core, loader, plain } = {}) {
     const corePath = core || DEFAULT_CORE;
-    const loaderPath = loader || DEFAULT_LOADER;
     const source = fs.readFileSync(corePath, "utf8");
-    if (source.split(ENTRY).length !== 2)
-        throw new Error(`Entry point ${JSON.stringify(ENTRY)} not found in ${corePath}`);
-    const receiver = fs.readFileSync(loaderPath, "utf8");
-    const combined = source.replace(ENTRY, receiver);
+    let combined = source;
+    if (!plain) {
+        const loaderPath = loader || DEFAULT_LOADER;
+        if (source.split(ENTRY).length !== 2)
+            throw new Error(`Entry point ${JSON.stringify(ENTRY)} not found in ${corePath}`);
+        combined = source.replace(ENTRY, fs.readFileSync(loaderPath, "utf8"));
+    }
 
     const { compress, temp } = loadCompress();
     try {
@@ -77,7 +82,7 @@ async function build({ core, loader } = {}) {
 async function main(argv = process.argv.slice(2)) {
     const opts = parseArgs(argv);
     if (opts.help) {
-        console.log("Usage: node build-payload.js [--core path] [--loader path] [--out lines.json]");
+        console.log("Usage: node build-payload.js [--core path] [--loader path] [--out lines.json] [--plain]");
         return 0;
     }
     const lines = await build(opts);
