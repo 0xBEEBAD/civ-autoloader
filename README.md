@@ -11,13 +11,14 @@ runs CivSwitchFS, prepares kaiHEN, and boots it.
 | Entry | Host | Status |
 |---|---|---|
 | ESP32-S3 | fully offline board | **tested** (Switch 2, 23.0.1) |
+| Switch 1 NRO | second console | **tested** (Switch 2, 23.0.1) |
 | Linux PC | Linux + Wi-Fi radio | **not tested yet** |
-| Switch 1 NRO | second console | **not tested yet** |
 
-Only the ESP32 path has been run on hardware. The Linux and Switch 1 NRO
-entries build and share the same payload and save, but have not completed an
-install yet. See [`packages/transport/README.md`](packages/transport/README.md)
-for each entry's requirements and caveats.
+The ESP32 and Switch 1 NRO paths have both completed an install on hardware
+and reached `kaiHEN installation complete`. The Linux entry builds and shares
+the same payload and save, but nobody has completed an install with it yet.
+See [`packages/transport/README.md`](packages/transport/README.md) for each
+entry's requirements and caveats.
 
 ## What you need
 
@@ -134,10 +135,17 @@ python3 tools/build_and_flash.py --keys prod.keys \
 1. Insert the SD card into the console.
 2. Start Civ VII.
 3. `MULTIPLAYER -> WIRELESS -> CREATE GAME -> HOST LOBBY`.
-4. Power the board (USB power is enough).
+4. Power the board (USB power is enough). It waits 1 s, then scans and
+   installs.
 5. Wait for `PERSIST INSTALL DONE - restart the game, then Load Game`.
 6. Close Civ VII completely, reopen it, choose **Load Game**, and load
    `XSTRIG.Civ7Save`.
+
+When the installer returns, the board becomes an open hotspot called **N-Hole**
+with a Nintendo-aware DNS sinkhole and a mini HTTP responder (the nanodns
+policy). Hold **BOOT** for 1.5 s to run the LDN flow again from the hotspot.
+N-Hole has no uplink, so it answers Nintendo names only — see
+[`packages/firmware/esp32/README.md`](packages/firmware/esp32/README.md#n-hole).
 
 ## 3b. Install with a Linux PC (not tested yet)
 
@@ -159,6 +167,9 @@ reopen it, and `Load Game`.
 See [`packages/transport/linux/README.md`](packages/transport/linux/README.md).
 
 ## 3c. Install with a Switch 1 NRO
+
+**Tested on hardware** with a Switch 1 running the NRO and a Switch 2 on
+23.0.1: the save installs over LDN and `Load Game` reaches kaiHEN.
 
 Requirements: Switch 1 homebrew, `ldn_mitm` removed and the console rebooted,
 both consoles close together (local wireless only), Civ VII 1.0.0 on the
@@ -253,33 +264,54 @@ The kaiHEN SD log is **off by default**. To enable it, uncomment `log-sd` in
 
 This project would not exist without the work below. Thank you.
 
+### The chain
+
 | Project | What we used | License |
 |---|---|---|
-| [CivSwitch](https://github.com/Gezine/CivSwitch) | userland exploit, Remote JS Loader, save installer design, chat compression | MIT |
-| [CivSwitchFS](https://github.com/ItsNerisma/CivSwitchFS) | FS elevation, persistent save codec/installer | MIT |
-| [kaiHEN](https://github.com/kurumuz/kaihen) | HEN, RO, bootstrap | GPL-2.0-only; libkaihen ISC |
-| [CivSwitchLDN](https://github.com/ItsNerisma/CivSwitchLDN) | LDN / Civ VII protocol flow and constants | GPL-3.0-only |
-| [Kinnay LDN](https://github.com/kinnay/LDN) | key derivation, advertisement/auth format | GPL-3.0 |
-| [pokeldn](https://github.com/Decryptu/pokeldn) | ESP32 `wpa_funcs` association patch | AGPL-3.0 |
-| [ns2jb](https://gitlab.com/kurumuz/ns2jb) | FS path-normalizer / reserved-gap research | no license file in the reference |
-| [civ7-fs-kaihen](https://github.com/s8n/civ7-fs-kaihen) | arm flow, thread scheduling, FS reference | reference only; no license file present |
-| CivSwitch ns2jb port (Slapah) | FS acquisition idea and reference shape checks | MIT (per CivSwitchFS notices) |
-| [nx-hbloader](https://github.com/switchbrew/nx-hbloader) | NS1 loader reference | ISC |
-| [nx-hbmenu](https://github.com/switchbrew/nx-hbmenu) | NS1 menu reference | ISC |
+| [CivSwitch](https://github.com/Gezine/CivSwitch) | userland exploit, Remote JS Loader, persistent save installer, chat compression | MIT |
+| [CivSwitchFS](https://github.com/ItsNerisma/CivSwitchFS) | FS elevation, persistent save codec/installer, `onElevated` hook | MIT |
+| [kaiHEN](https://github.com/ouncebrew/kaihen) | HEN, RO, bootstrap, plugin runtime, hbmenu/hbloader packaging | GPL-2.0-only; `libkaihen` ISC |
+
+### LDN transport
+
+| Project | What we used | License |
+|---|---|---|
+| [CivSwitchLDN](https://github.com/ItsNerisma/CivSwitchLDN) | LDN client, Civ VII lobby protocol, UDP installer design; the Linux entry is a fork of it | GPL-3.0-only |
+| [Kinnay LDN](https://github.com/kinnay/LDN) | key derivation, advertisement/auth format, nl80211 interface handling | GPL-3.0 |
+| [pokeldn](https://github.com/Decryptu/pokeldn) | ESP32 `wpa_funcs` patch for handshake-less association | AGPL-3.0 |
+| [IZCIVSwitch](https://github.com/byizmysh/IZCIVSwitch) | interface-level radio release (`nmcli device set managed no`), netlink teardown, shield around the association cleanup, `engine.json` idea | GPL-2.0-or-later (its own code) |
+| [xiaolizi23/civswitch-ldn-nx](https://github.com/xiaolizi23/civswitch-ldn-nx) | the Switch 1 NRO: LDN join, `ldn_mitm` guard, launch-mode guard | GPL-3.0-only |
+
+### Homebrew runtime
+
+| Project | What we used | License |
+|---|---|---|
 | [ounce-hbloader](https://github.com/ouncebrew/ounce-hbloader) | NS2 `game/main` | ISC |
 | [ounce-hbmenu](https://github.com/ouncebrew/ounce-hbmenu) | NS2 `hbmenu.nro` | ISC |
-| [OunceShell](https://github.com/kurumuz/ounceshell) | FTP plugin source | GPL-3.0 |
+| [nx-hbloader](https://github.com/switchbrew/nx-hbloader) | NS1 loader reference (not shipped) | ISC |
+| [nx-hbmenu](https://github.com/switchbrew/nx-hbmenu) | NS1 menu reference (not shipped) | ISC |
+| [OunceShell](https://github.com/kurumuz/ounceshell) | `ftpd` plugin source, optional file manager | GPL-3.0 |
 | [ftpd](https://github.com/kurumuz/ounceshell) | FTP server (`switch2/third_party/ftpd`) | Unlicense |
 | [libnx](https://github.com/switchbrew/libnx) | Switch runtime | ISC |
-| [libounce](https://github.com/ouncebrew/ounce-devkit) | Switch 2 runtime | ISC |
+| [libounce](https://github.com/ouncebrew/ounce-devkit) | Switch 2 runtime, plugin API | ISC |
 | [ESP-IDF](https://github.com/espressif/esp-idf) | ESP32-S3 firmware framework | Apache-2.0 |
 | [devkitPro](https://devkitpro.org/) | toolchain and portlibs | various; see `packages/sdcard/licenses/` |
-| [Atmosphere](https://github.com/Atmosphere-NX/Atmosphere) | FS source reference | GPL-2.0 |
-| [civswitch-kit](https://gitee.com/mza1010/civswitch-kit) | reference / control implementation | GPL-2.0 (with Gezine MIT notice) |
-| [SwitchBrew](https://switchbrew.org/) | system documentation | documentation reference |
 
-`ns2jb` and `civ7-fs-kaihen` are research references; no source tree from them
-is shipped here. The full license texts for the shipped components are in
+### Research references
+
+No source tree from these is shipped here; they informed the implementation.
+
+| Project | What it informed |
+|---|---|
+| [ns2jb](https://gitlab.com/kurumuz/ns2jb) | FS path-normalizer overflow, reserved-gap allocator race |
+| [civ7-fs-kaihen](https://github.com/s8n/civ7-fs-kaihen) | arm flow, raw thread scheduling, FS memory primitives |
+| CivSwitch ns2jb port (Slapah) | FS acquisition idea and reference shape checks |
+| [civ7-fs](https://github.com/HerXayah/civ7-fs) | Civ7 FS port lineage |
+| [civswitch-kit](https://gitee.com/mza1010/civswitch-kit) | reference / control implementation |
+| [Atmosphere](https://github.com/Atmosphere-NX/Atmosphere) | FS source comparison, session-limit analysis |
+| [SwitchBrew](https://switchbrew.org/) | system documentation, title IDs, service tables |
+
+The full license texts for the shipped components are in
 `packages/sdcard/licenses/` and `THIRD_PARTY_NOTICES.md`.
 
 ## License

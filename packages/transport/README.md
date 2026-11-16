@@ -10,12 +10,12 @@ AUTOLOADER: kaiHEN installation complete. You can close Civ7 now.
 | Entry | Host | Status |
 |---|---|---|
 | ESP32-S3 board | fully offline | **tested** (Switch 2, 23.0.1) |
+| Switch 1 NRO | second console | **tested** (Switch 2, 23.0.1) |
 | Linux PC | Linux + Wi-Fi radio | **not tested yet** |
-| Switch 1 NRO | second console | **not tested yet** |
 
-Only the ESP32 path has been run on hardware so far. The Linux and NRO paths
-build and share the same protocol code, but nobody has completed an install
-with them.
+Both the ESP32 and the Switch 1 NRO have completed an install on hardware and
+reached `kaiHEN installation complete`. The Linux entry builds and shares the
+same protocol code, but nobody has completed an install with it.
 
 ## Discovering the entries
 
@@ -65,6 +65,10 @@ python3 tools/build_and_flash.py --keys prod.keys \
 
 Then `MULTIPLAYER -> WIRELESS -> CREATE GAME -> HOST LOBBY`, power the board,
 wait for `PERSIST INSTALL DONE`, close the game, reopen, `Load Game`.
+
+After the install the board is an open hotspot called **N-Hole** (DNS sinkhole
++ mini HTTP on the board); hold **BOOT** for 1.5 s to run the LDN flow again.
+See [`../firmware/esp32/README.md`](../firmware/esp32/README.md#n-hole).
 
 ## Linux (not tested yet)
 

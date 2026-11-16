@@ -16,9 +16,11 @@ Each component keeps its own license.
 | ftpd | Unlicense | `packages/sdcard/vendor/plugins/ftpd.nso` |
 | libnx | ISC | devkitPro |
 | libounce | ISC | devkitPro / ounce-devkit |
-| CivSwitchLDN | GPL-3.0-only | ESP32 LDN transport (`main/civ7.c`, `main/main.c`) |
+| CivSwitchLDN | GPL-3.0-only | ESP32 LDN transport (`main/civ7.c`, `main/main.c`); `packages/transport/linux/ldn` |
 | Kinnay LDN | GPL-3.0 | key derivation / advertisement format |
 | pokeldn | AGPL-3.0 | ESP32 `wpa_funcs` association patch |
+| xiaolizi23/civswitch-ldn-nx | GPL-3.0-only | `packages/transport/nro` (Switch 1 homebrew entry) |
+| IZCIVSwitch | GPL-2.0-or-later | `packages/transport/linux/bash/network-panel.sh`, `ldn/panel_network.py`, the `engine.json` shape |
 
 ## Build tools
 
@@ -42,6 +44,12 @@ Each component keeps its own license.
   2. replace the ported LDN code with a clean-room implementation.
 - The JavaScript payloads (`CivSwitch`, `CivSwitchFS`, the overlay) are MIT and
   are not linked with the GPL firmware code.
+- `packages/transport/nro` is a GPL-3.0-only derivative of
+  `xiaolizi23/civswitch-ldn-nx`, which itself derives from CivSwitchLDN. It
+  stays in its own directory with its own license file.
+- `packages/transport/linux` vendors CivSwitchLDN's `ldn/` (GPL-3.0-only) and
+  adapts IZCIVSwitch's radio handling (GPL-2.0-or-later). It also stays in its
+  own directory.
 
 The full license texts shipped with the SD card are in
 `packages/sdcard/licenses/`.

@@ -9,6 +9,9 @@ press ZR: install CivSwitch
 press R: install autoloader (kaiHEN)
 ```
 
+**Tested on hardware**: a Switch 1 running this NRO installs the save on a
+Switch 2 (23.0.1) over LDN, and `Load Game` reaches kaiHEN.
+
 Based on [xiaolizi23/civswitch-ldn-nx](https://github.com/xiaolizi23/civswitch-ldn-nx)
 (GPL-3.0-only).
 
