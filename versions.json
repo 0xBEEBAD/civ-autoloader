@@ -44,7 +44,9 @@
     },
     "hbmenu.nro": {
       "project": "ouncebrew/ounce-hbmenu",
-      "sha256": "274df7a0e95334c4746f98552e57d3d9c897d9ae98b7d247aa8e1841e63cb797"
+      "sha256": "274df7a0e95334c4746f98552e57d3d9c897d9ae98b7d247aa8e1841e63cb797",
+      "commit": "d7e10c028b53da17867615ee0a3c453b9cf9464a",
+      "note": "d7e10c0 looks up the system language at startup; 43845d2 removes it (2345-0011 on some consoles). Rebuild from 43845d2 when a Switch 2 hbmenu build is available."
     },
     "hen/main": {
       "project": "SeanHeuc/kaihen",

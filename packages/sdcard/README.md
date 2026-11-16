@@ -33,4 +33,15 @@ The resulting SD layout:
 /licenses/...
 ```
 
+## hbmenu version
+
+`hbmenu.nro` is ounce-hbmenu **d7e10c0**. That build looks up the system
+language at startup through `setMakeLanguage`, which returns 2345-0011 on
+consoles whose language is not in the settings service's list; the menu then
+does not start.
+
+Upstream kaiHEN moved to **43845d2**, which drops the lookup. Replace the
+vendor file when a Switch 2 build of that commit is available; the rest of the
+chain is unchanged.
+
 OunceShell is intentionally not included.
