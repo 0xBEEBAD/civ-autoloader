@@ -1,5 +1,4 @@
 #include <switch.h>
-#include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
 #include "game_probe.h"
@@ -168,12 +167,6 @@ static void print_ip(LdnIpv4Address addr) {
            (ip >> 8) & 255, ip & 255);
 }
 
-static void print_wifi_ip(u32 network_order_ip) {
-    u32 ip = ntohl(network_order_ip);
-    printf("%u.%u.%u.%u", (ip >> 24) & 255, (ip >> 16) & 255,
-           (ip >> 8) & 255, ip & 255);
-}
-
 static const char *network_problem(const LdnNetworkInfo *network) {
     if (network->node_count == 0 || network->node_count > 8)
         return "Selected LDN network has no valid host";
@@ -271,15 +264,10 @@ static void draw(void) {
     }
     if (install_tested) {
         printf("\nSave installer: %s\n", install_result.message);
-        if (install_result.console_ip) {
-            printf("Switch 2: ");
-            print_wifi_ip(install_result.console_ip);
-            printf(":9026\n");
-        }
         if (install_result.error_code)
             printf("Installer error: 0x%08X\n", install_result.error_code);
         if (install_result.completed)
-            printf("DONE: reboot S2, then choose Load Game.\n");
+            printf("DONE: restart Civ7 on S2, then Load Game.\n");
     }
     printf("\nUp/Down select  X scan  A join lobby\n");
     printf("Y test  R loader only  ZR replace saves\n");

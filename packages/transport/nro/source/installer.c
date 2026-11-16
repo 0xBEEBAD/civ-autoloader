@@ -102,10 +102,18 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
                                        InstallerProgress on_progress) {
     Link link = {0};
     InstallerResult result = fail("Installer did not start", 0, 0, 0);
+    bool socket_owned = false;
 
+    // game_join() keeps the libnx socket driver open for the chat channel.
+    // socketInitialize() returns AlreadyInitialized in that case; reuse the
+    // existing session instead of failing before the save is sent.
     Result rc = socketInitializeDefault();
-    if (R_FAILED(rc))
+    if (R_SUCCEEDED(rc)) {
+        socket_owned = true;
+    } else if (R_MODULE(rc) != Module_Libnx ||
+               R_DESCRIPTION(rc) != LibnxError_AlreadyInitialized) {
         return fail("socketInitialize failed", (int)rc, 0, 0);
+    }
 
     link.fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (link.fd < 0) {
@@ -134,7 +142,7 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
     link.target.sin_port = htons(INSTALLER_PORT);
     link.target.sin_addr.s_addr = htonl(host.addr);
 
-    struct timeval timeout = {.tv_sec = 0, .tv_usec = 50000};
+    struct timeval timeout = {.tv_sec = 0, .tv_usec = 150000};
     setsockopt(link.fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     // Encode both payloads once.
@@ -161,6 +169,19 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
     link.template_chunks = (unsigned)((encoded = strlen(link.template_b64)) +
                                       CHUNK - 1) / CHUNK;
     link.apply_chunks = (unsigned)((strlen(link.apply_b64) + CHUNK - 1) / CHUNK);
+
+    // The console evaluates the chat payload and only then binds :9027.
+    // Match the ESP32 firmware's settle time, and announce the persist stage
+    // so a payload that still defaults to the older stage list cannot start
+    // the wrong pipeline.
+    svcSleepThread(800000000ULL);
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (send_datagram(&link, "Mpersist", 8) < 0) {
+            result = fail("Stage header send failed", errno, 0, 0);
+            goto finish;
+        }
+        svcSleepThread(100000000ULL);
+    }
 
     // Header: our 5-field form with cfs/start set to 0.
     char header[96];
@@ -206,6 +227,7 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
     if (on_progress) on_progress("Repairing missing chunks", sent, total);
 
     u64 deadline = armGetSystemTick() + armNsToTicks(INSTALL_TIMEOUT_NS);
+    u64 next_g_tick = armGetSystemTick();
     bool transfer_complete = false;
     bool install_ok = false;
     bool install_failed = false;
@@ -213,10 +235,12 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
     char packet[2048];
 
     while (armGetSystemTick() < deadline && appletMainLoop()) {
-        if (!transfer_complete) {
+        u64 now = armGetSystemTick();
+        if (!transfer_complete && now >= next_g_tick) {
             if (rounds >= REPAIR_ROUNDS) break;
             if (send_datagram(&link, "G", 1) < 0) break;
             rounds++;
+            next_g_tick = now + armNsToTicks(RECEIVE_WINDOW_NS);
         }
 
         ssize_t size = recv(link.fd, packet, sizeof(packet) - 1, 0);
@@ -263,6 +287,6 @@ finish:
     free(link.apply_b64);
     if (link.fd >= 0) close(link.fd);
 finish_socket:
-    socketExit();
+    if (socket_owned) socketExit();
     return result;
 }
