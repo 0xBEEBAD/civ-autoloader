@@ -26,6 +26,7 @@ static const char *TAG = "bridge";
 
 static uint8_t s_peer[4];
 static volatile bool s_have_peer;
+static volatile bool s_nhole_request;
 static uint32_t s_seq;
 
 static void send_line(const char *line) {
@@ -53,6 +54,7 @@ static void bridge_task(void *arg) {
             line[used] = 0;
             if (used && strncmp(line, "stages ", 7) == 0) installer_set_stages(line + 7);
             else if (used && strcmp(line, "sendjs") == 0) installer_loaderjs_run();
+            else if (used && strcmp(line, "nhole") == 0) s_nhole_request = true;
             else if (used) send_line(line);
             used = 0;
         } else if (used + 1 < sizeof(line)) {
@@ -76,8 +78,7 @@ void bridge_start(void) {
         ESP_LOGE(TAG, "task create failed");
 }
 
-void bridge_udp_rx(const uint8_t *data, size_t len, const uint8_t src_ip[4]) {
-    if (!data || len == 0) return;
+void bridge_udp_rx(const uint8_t *data, size_t len, const uint8_t src_ip[4]) {    if (!data || len == 0) return;
     if (data[0] == 'R' && len == 1) {
         memcpy(s_peer, src_ip, 4);
         s_have_peer = true;
@@ -96,3 +97,9 @@ void bridge_udp_rx(const uint8_t *data, size_t len, const uint8_t src_ip[4]) {
     }
 }
 
+/* Set by the serial command "nhole"; the main loop consumes it. */
+bool bridge_take_nhole_request(void) {
+    if (!s_nhole_request) return false;
+    s_nhole_request = false;
+    return true;
+}

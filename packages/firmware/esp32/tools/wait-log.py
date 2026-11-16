@@ -30,6 +30,12 @@ import tty
 SUCCESS = (
     "AUTOLOADER: kaiHEN installation complete. You can close Civ7 now.",
 )
+# The board parks in N-Hole after the installer returns. Right after a normal
+# install this fires before the console reaches kaiHEN, so it is only a success
+# signal when asked for (--board-ready).
+BOARD_READY = (
+    "N-Hole up:",
+)
 FAILURE = (
     "AUTOLOADER: ERROR:",
     "AUTOLOADER: kaiHEN prepare failed:",
@@ -63,6 +69,8 @@ def main() -> int:
     ap.add_argument("--allow-shared", action="store_true")
     ap.add_argument("--keep", action="store_true",
                     help="do not exit on success/failure (bridge mode)")
+    ap.add_argument("--board-ready", action="store_true",
+                    help="also exit on 'N-Hole up:' (board side, before Load Game)")
     ap.add_argument("--cmd-fifo", default="/tmp/autoloader-cmd",
                     help="FIFO used to type commands into the board serial")
     args = ap.parse_args()
@@ -173,6 +181,11 @@ def main() -> int:
                 for key in SUCCESS:
                     if key in line:
                         print(f"\n# SUCCESS: {key}", file=sys.stderr)
+                        result = 0
+                        return result
+                for key in BOARD_READY if args.board_ready else ():
+                    if key in line:
+                        print(f"\n# BOARD READY: {key}", file=sys.stderr)
                         result = 0
                         return result
         print("\n# TIMEOUT", file=sys.stderr)

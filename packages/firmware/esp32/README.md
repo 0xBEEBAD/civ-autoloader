@@ -8,6 +8,11 @@ With the payload it also carries the full persistent installer (the 1 MB save
 template), so one run does everything: exploit → installer → back to the normal
 TCP loader on `:9026`.
 
+When the install finishes the board switches its radio to an access point
+called **N-Hole**, which serves a Nintendo-aware DNS sinkhole and a mini HTTP
+responder (the nanodns policy, on the board). Hold **BOOT** for 1.5 s to leave
+the hotspot and run the LDN flow again.
+
 ## Why another board firmware?
 
 `esp32-usb-pad` (the "net-pad") types the payload over a **USB HID keyboard**
@@ -78,9 +83,17 @@ in ROM download mode).
 
 ## Run it
 
+The board has one loop:
+
+```text
+power on -> wait 1 s -> LDN flow (scan, join, install)
+         -> N-Hole hotspot up
+         -> hold BOOT 1.5 s -> LDN flow again -> N-Hole ...
+```
+
 1. Start Civ VII and open `MULTIPLAYER → WIRELESS → CREATE GAME → HOST LOBBY`.
 2. Power the board (USB power is enough; it does not need to be plugged into
-   the console).
+   the console). The LDN flow starts by itself after one second.
 3. The board scans, joins, authenticates and sends the payload automatically.
 The original CivSwitch save is installed first. After that the board streams
 CivSwitchFS over the same LDN channel and the console evaluates it in RAM; the
@@ -99,11 +112,64 @@ PERSIST INSTALL DONE - restart the game, then Load Game
 PERSIST RETURNED
 ```
 
-5. Restart the game, choose **Load Game**, and load `XSTRIG.Civ7Save`.
+5. The board prints `N-Hole up: ssid=N-Hole ip=192.168.4.1` and parks there.
+6. Restart the game, choose **Load Game**, and load `XSTRIG.Civ7Save`.
    The save runs CivSwitchFS, prepares kaiHEN, and boots it.
 
 Each install needs a fresh lobby. After the save is installed, later runs only
 need Load Game.
+
+Nothing happens if no lobby is open? The board keeps rescanning every ~11 s
+until it finds one, and **BOOT** abandons the scan and goes straight to the
+hotspot.
+
+While `wait-log.py` is running, typing `nhole` in its terminal does the same as
+the button, which is handy on a board whose BOOT button is hard to reach.
+
+## N-Hole
+
+After the LDN flow the radio becomes an open access point:
+
+| Item | Value |
+|---|---|
+| SSID | `N-Hole` (open, no password) |
+| Board address | `192.168.4.1` |
+| Services | DNS on UDP `:53`, HTTP on TCP `:80` |
+| Clients | up to 4 |
+
+Join it from the console or a phone and use the board as the DNS server. The
+policy is the one nanodns uses on the console:
+
+| Query | Answer |
+|---|---|
+| `ctest.cdn.nintendo.net`, `ctest.srv.nintendo.net`, `conntest.nintendowifi.net` (and subdomains) | `192.168.4.1`; `:80` answers `200 OK` |
+| any other `*.nintendo.*` / `*.nintendowifi.net` name | `0.0.0.0` (A), `::` (AAAA), or no data |
+| everything else | `NXDOMAIN` |
+
+The served hosts get the headers the console's connectivity check wants:
+
+```text
+HTTP/1.1 200 OK
+X-Organization: Nintendo
+Cache-Control: no-store
+Content-Type: text/plain
+
+ok
+```
+
+Two differences from the console plugin, both because the board is a standalone
+hotspot:
+
+- **No uplink.** nanodns forwards every non-Nintendo name to an upstream
+  resolver, because the console keeps its normal internet connection. The
+  board is AP-only, so forwarding would stall on an unreachable resolver and
+  then time out; non-Nintendo names get `NXDOMAIN` immediately instead. This
+  means N-Hole is not a general-purpose internet hotspot.
+- **The served address is the AP's own address**, printed at start-up. The
+  console plugin answers `127.0.0.1` because it runs on the console itself.
+
+`N-Hole down: q=... served=... blocked=... nx=... http=.../...` is printed when
+the hotspot stops, so a BOOT re-run leaves a summary on the serial log.
 
 ## SD card preparation
 
@@ -143,6 +209,7 @@ scan LDN advertisements (channels 1/6/11)
   → console NAKs only the missing chunks; the board resends just those
   → console starts the installer as soon as the last chunk arrives
   → console writes XSTRIG.Civ7Save and commits
+  → board swaps the radio to N-Hole (SoftAP + DNS sinkhole + HTTP)
   → restart, Load Game → CivSwitchFS → kaiHEN → hbmenu
 ```
 
@@ -154,9 +221,10 @@ packages/firmware/esp32/
   partitions.csv           app 1 MB + 2 MB storage for the installer blobs
   sdkconfig.defaults
   main/
-    main.c                 scan/associate/auth/IP, drives civ7 + installer
+    main.c                 scan/associate/auth/IP, drives civ7 + installer; BOOT/run loop
     civ7.c/.h              Civ VII LDN protocol (transport, FireCONN, NetChat)
     installer.c/.h         streams the installer over UDP :9027
+    nhole.c/.h             N-Hole: SoftAP, DNS sinkhole, mini HTTP responder
     private_wifi.h         ESP-IDF v6.1 wpa_funcs ABI (no 4-way handshake)
   tools/
     build_and_flash.py     one-click
@@ -197,6 +265,8 @@ python3 tools/wait-log.py --port /dev/cu.usbmodem2101
 
 `wait-log.py` exits on `PERSIST INSTALL DONE` or
 `AUTOLOADER: HEN: boot sequence complete` (success), or on the failure lines.
+With `--board-ready` it also exits on `N-Hole up:`, i.e. as soon as the board
+side is done, before you reach Load Game.
 It writes the full run to `/tmp/autoloader-*.log`.
 It reopens the port automatically when the board resets and USB-Serial/JTAG
 re-enumerates, so start it before pressing RESET.
@@ -217,8 +287,10 @@ and the console payload logs share the same serial stream.
 | `no FireRPLY/NetWelcome` | the console left the lobby; restart the game |
 | `UDP incomplete missT=...` | the board is re-sending; check `rx=` growth |
 | `binding failed` / `udp bind failed` | port 9027 already in use in the game |
+| `N-Hole failed to start` | radio did not leave LDN cleanly; hold BOOT 1.5 s to retry |
 | Console shows nothing | the chat XSS did not render; check the lobby chat |
 | Board not detected by esptool | hold BOOT, tap RESET, release BOOT |
+| Board ignores BOOT after boot | BOOT is held at reset -> ROM download mode; tap RESET to boot the firmware |
 
 ## Persistent autoloader save (Load Game)
 
@@ -262,8 +334,10 @@ in `third_party/CivSwitchFS/src/core/autoloader.mjs`, rebuild, and reflash.
 - `prod.keys` and everything derived from it (`main/keys.h`) stay offline.
 - The installer blob contains the pristine save template from the CivSwitchFS
   persist build; it is regenerated from the repo, not copied around.
-- The board never connects to your Wi-Fi in this firmware; after the run it is
-  idle. Reset it for another attempt.
+- The board never joins your Wi-Fi in this firmware; the station side is only
+  used for the LDN association. After the run it is an AP called `N-Hole`.
+- N-Hole is not an internet hotspot: it has no uplink, so only the Nintendo
+  names above are answered (see [N-Hole](#n-hole)).
 
 ## Credits & license
 

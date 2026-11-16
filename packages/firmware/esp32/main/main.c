@@ -28,11 +28,14 @@
 #include "installer.h"
 #include "bridge.h"
 #include "build_time.h"
+#include "nhole.h"
 
 static const char *TAG = "ldnpoc";
 
 #define BOOT_GPIO 0
-#define BOOT_HOLD_MS 2000
+#define BOOT_POLL_MS 50
+#define BOOT_HOLD_MS 1500
+#define LDN_START_DELAY_MS 1000
 #define SCAN_CHANNELS {1, 6, 11}
 #define DWELL_MS 600
 #define FRAME_MAX 1392
@@ -167,7 +170,14 @@ static int ldn_sta_rx_eapol(uint8_t *src, uint8_t *buf, uint32_t len) { (void)sr
 static bool ldn_sta_in_handshake(void) { return false; }
 static void ldn_sta_connected(uint8_t *bssid) { (void)bssid; }
 
+/* Installs the station hooks exactly once.
+ *
+ * Every later call would read the already-patched table, save ldn_sta_connect
+ * as the "stock" call and then recurse into itself. The BOOT re-run path calls
+ * this again after every N-Hole session, so the guard is required. */
 static void install_hooks(void) {
+    static bool installed;
+    if (installed) return;
     struct wpa_funcs *t = malloc(sizeof(*t));
     assert(t);
     memcpy(t, wpa_cb, sizeof(*t));
@@ -178,6 +188,7 @@ static void install_hooks(void) {
     t->wpa_sta_in_4way_handshake = ldn_sta_in_handshake;
     ESP_ERROR_CHECK(esp_wifi_register_wpa_cb_internal(t));
     wpa_cb = t;
+    installed = true;
 }
 
 /* ---- association ---- */
@@ -560,6 +571,25 @@ static void radio_init(void) {
     ESP_LOGI(TAG, "radio ready");
 }
 
+/* Puts the radio back into a plain station after an N-Hole session, so the
+ * next LDN pass starts from the same state as the first one.
+ *
+ * nhole_stop() already stopped the radio. The station config from the previous
+ * LDN join is cleared, otherwise esp_wifi_start() would try to rejoin an AP
+ * that no longer exists. Only the station half of the patched wpa table was
+ * changed, so the AP path (hostapd) stays stock. */
+static void radio_restore_station(void) {
+    esp_wifi_set_promiscuous(false);
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    wifi_config_t empty = {0};
+    esp_wifi_set_config(WIFI_IF_STA, &empty);
+    esp_wifi_set_mac(WIFI_IF_STA, s_sta_mac);   /* fixed MAC (pokeldn uses a stable one) */
+    esp_wifi_start();
+    esp_wifi_set_promiscuous_rx_cb(&rx_cb);
+    esp_wifi_set_promiscuous(true);
+    ESP_LOGI(TAG, "radio back in station mode");
+}
+
 /* ---- scan + derive + associate ---- */
 static void hex32(const uint8_t b[16], char out[33]) {
     static const char h[] = "0123456789abcdef";
@@ -647,7 +677,10 @@ static void derive_and_associate(void) {
     start_associate();
 }
 
-/* boot task: 2s hold -> start a scan round */
+/* Set by boot_task() when BOOT has been held; consumed by the active phase. */
+static volatile bool s_boot_request;
+
+/* One scan round: 3 channels x 6 rounds (~11 s), abortable with BOOT. */
 static void do_scan(void) {
     static const uint8_t chans[] = SCAN_CHANNELS;
     ESP_LOGI(TAG, "=== scan start ===");
@@ -655,8 +688,8 @@ static void do_scan(void) {
     vTaskDelay(pdMS_TO_TICKS(200));
     s_got_frame = false;
     s_state = ST_SCANNING;
-    for (int r = 0; r < 6 && !s_got_frame; r++) {
-        for (size_t i = 0; i < sizeof(chans) && !s_got_frame; i++) {
+    for (int r = 0; r < 6 && !s_got_frame && !s_boot_request; r++) {
+        for (size_t i = 0; i < sizeof(chans) && !s_got_frame && !s_boot_request; i++) {
             esp_wifi_set_channel(chans[i], WIFI_SECOND_CHAN_NONE);
             vTaskDelay(pdMS_TO_TICKS(DWELL_MS));
         }
@@ -664,19 +697,80 @@ static void do_scan(void) {
     if (s_got_frame) {
         ESP_LOGI(TAG, "frame captured; deriving + associating...");
         derive_and_associate();
+    } else if (s_boot_request) {
+        ESP_LOGI(TAG, "scan interrupted by BOOT");
+        s_state = ST_IDLE;
     } else {
         ESP_LOGI(TAG, "no LDN frame found; idle");
         s_state = ST_IDLE;
     }
 }
 
-void app_main(void) {
-    ESP_LOGI(TAG, "BUILD: %s", BUILD_UTC);
-    radio_init();
-    bridge_start();
-    ESP_LOGI(TAG, "=== ldn-poc auto mode (no BOOT trigger) ===");
-    ESP_LOGI(TAG, "scanning every ~8s; keep the Civ7 wireless lobby open");
+/* ------------------------------------------------------------ run control */
+
+/* One button, two phases:
+ *   scanning  -> stop looking for a lobby and park in N-Hole
+ *   parked    -> leave N-Hole and run the LDN flow again
+ * The request is set by boot_task() and consumed by whichever phase is active. */
+
+/* Clears the LDN state so the next pass starts from scratch. */
+static void reset_ldn_state(void) {
+    s_auth_ok = false;
+    s_have_ip = false;
+    s_sent = false;
+    s_got_frame = false;
+    s_state = ST_IDLE;
+}
+
+/* BOOT is active low. Returns true when it is held down. */
+static bool boot_pressed(void) {
+    return gpio_get_level(BOOT_GPIO) == 0;
+}
+
+/* Reads and clears the pending BOOT request. */
+static bool boot_take_request(void) {
+    if (!s_boot_request) return false;
+    s_boot_request = false;
+    return true;
+}
+
+/* BOOT or the serial command "nhole". Lets a board without a usable button
+ * (or a test bench) reach the hotspot without waiting for a lobby. */
+static bool run_requested(void) {
+    return boot_take_request() | bridge_take_nhole_request();
+}
+
+/* Watches BOOT in the background. A hold of BOOT_HOLD_MS raises one request;
+ * the button has to be released before another one can be raised. */
+static void boot_task(void *argument) {
+    (void)argument;
+    int held = 0;
+    bool latched = true;             /* require a release before the first fire */
     for (;;) {
+        if (!boot_pressed()) {
+            held = 0;
+            latched = false;
+        } else if (!latched) {
+            if (held < BOOT_HOLD_MS) held += BOOT_POLL_MS;
+            if (held >= BOOT_HOLD_MS) {
+                latched = true;
+                s_boot_request = true;
+                ESP_LOGI(TAG, "BOOT held %d ms", BOOT_HOLD_MS);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
+    }
+}
+
+/* One LDN pass: scan, join, install.
+ * Returns true when the installer ran, false when BOOT cut the scan short. */
+static bool ldn_pass(void) {
+    reset_ldn_state();
+    for (;;) {
+        if (run_requested()) {
+            ESP_LOGI(TAG, "request: leaving the LDN scan");
+            return false;
+        }
         if (!s_auth_ok) {
             do_scan();
         } else if (!s_have_ip) {
@@ -686,8 +780,64 @@ void app_main(void) {
             civ7_set_net(s_local_ip, s_host_ip, s_peer, s_sta_mac);
             civ7_run();
             installer_udp_run();
-            ESP_LOGI(TAG, "installer flow done; idle (reset the board for another run)");
+            ESP_LOGI(TAG, "installer flow done");
+            return true;
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void app_main(void) {
+    ESP_LOGI(TAG, "BUILD: %s", BUILD_UTC);
+
+    gpio_config_t boot = {
+        .pin_bit_mask = 1ull << BOOT_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&boot);
+
+    radio_init();
+    bridge_start();
+    if (xTaskCreate(boot_task, "boot-key", 2048, NULL, 2, NULL) != pdPASS)
+        ESP_LOGE(TAG, "boot task create failed");
+
+    /* Wait a moment before scanning so the console can bring the lobby up
+     * first. Holding BOOT at power-on is not usable here: on the ESP32-S3 that
+     * pin selects the ROM download mode and the firmware would never run. */
+    ESP_LOGI(TAG, "starting the LDN flow in %d ms", LDN_START_DELAY_MS);
+    vTaskDelay(pdMS_TO_TICKS(LDN_START_DELAY_MS));
+    boot_take_request();     /* drop anything pressed during that wait */
+
+    for (;;) {
+        bool installed = ldn_pass();
+
+        ESP_LOGI(TAG, "switching the radio to %s", NHOLE_SSID);
+        esp_err_t err = nhole_start();
+        if (err != ESP_OK) {
+            /* No hotspot: wait for BOOT with the radio parked, so a re-run is
+             * still possible instead of an unreachable board. */
+            ESP_LOGE(TAG, "%s failed to start: %s", NHOLE_SSID, esp_err_to_name(err));
+            nhole_stop();
+            radio_restore_station();
+            ESP_LOGI(TAG, "hold BOOT for %d ms to retry", BOOT_HOLD_MS);
+            while (!run_requested())
+                vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        if (installed)
+            ESP_LOGI(TAG, "install finished; %s is up", NHOLE_SSID);
+        else
+            ESP_LOGI(TAG, "no install this pass; %s is up", NHOLE_SSID);
+        ESP_LOGI(TAG, "parked in %s; hold BOOT for %d ms for another LDN run",
+                 NHOLE_SSID, BOOT_HOLD_MS);
+
+        while (!run_requested())
+            vTaskDelay(pdMS_TO_TICKS(100));
+
+        ESP_LOGI(TAG, "request: leaving %s", NHOLE_SSID);
+        nhole_stop();
+        radio_restore_station();
     }
 }

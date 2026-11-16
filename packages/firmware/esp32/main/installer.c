@@ -291,7 +291,10 @@ void installer_udp_run(void) {
     s_need_c = (s_cfs_len + UDP_CHUNK - 1) / UDP_CHUNK;
     s_need_s = (s_start_len + UDP_CHUNK - 1) / UDP_CHUNK;
     s_done = false;
+    /* One pass leaves nothing behind: a BOOT re-run must not stack queues. */
+    if (s_req_q) { vQueueDelete(s_req_q); s_req_q = NULL; }
     s_req_q = xQueueCreate(512, sizeof(uint32_t));
+    if (!s_req_q) { ESP_LOGE(TAG, "queue create failed"); return; }
 
     uint8_t ip[4] = {0};
     civ7_get_local_ip(ip);
