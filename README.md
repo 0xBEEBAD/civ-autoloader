@@ -2,13 +2,22 @@
 
 Autoloader for **Civilization VII** on Switch 2.
 
-An ESP32-S3 joins the game's local-wireless lobby, delivers the CivSwitch
-userland loader, and installs the **autoloader save**. On the next `Load Game`
-the save runs CivSwitchFS, prepares kaiHEN, and boots it.
+A host joins the game's local-wireless lobby, delivers the CivSwitch userland
+loader, and installs the **autoloader save**. On the next `Load Game` the save
+runs CivSwitchFS, prepares kaiHEN, and boots it.
 
 ## Status
 
-- **Switch 2, firmware 23.0.1**: working path (CivSwitchFS + kaiHEN).
+| Entry | Host | Status |
+|---|---|---|
+| ESP32-S3 | fully offline board | **tested** (Switch 2, 23.0.1) |
+| Linux PC | Linux + Wi-Fi radio | **not tested yet** |
+| Switch 1 NRO | second console | **not tested yet** |
+
+Only the ESP32 path has been run on hardware. The Linux and Switch 1 NRO
+entries build and share the same payload and save, but have not completed an
+install yet. See [`packages/transport/README.md`](packages/transport/README.md)
+for each entry's requirements and caveats.
 
 ## What you need
 
@@ -16,11 +25,9 @@ the save runs CivSwitchFS, prepares kaiHEN, and boots it.
 |---|---|
 | Console | Switch 2, firmware **23.0.1** |
 | Game | Civilization VII **1.0.0 physical cartridge** |
-| Board | ESP32-S3 with **16 MB flash** |
-| Cable | USB-C data cable for flashing/power |
-| Keys | your own `prod.keys` (dumped from your Switch 1) |
-| SD card | **microSD Express** card, formatted **exFAT** (recommended on an updated Switch 2) or **FAT32** for smaller cards |
-| SD reader | to copy the staged files |
+| Host | an ESP32-S3 (16 MB flash), **or** Linux with a Wi-Fi radio, **or** a Switch 1 with homebrew |
+| Keys | your own `prod.keys` (not needed for the Switch 1 NRO) |
+| SD card | **microSD Express**, formatted **exFAT** (recommended on an updated Switch 2) or **FAT32** for smaller cards |
 
 The SD card is required for kaiHEN (`hbmenu.nro` and `kaihen/`). Without it,
 the FS stage still runs, but kaiHEN preparation stops with an on-screen
@@ -30,17 +37,22 @@ message.
 
 ```text
 packages/
-  firmware/esp32/   ESP-IDF firmware (LDN transport, installer, blobs)
-  sdcard/           SD card staging and pinned prebuilt binaries
-  userland/         notes for the CivSwitch userland loader
-  fs/               notes for the CivSwitchFS stage
-  kaihen/           notes for the kaiHEN installer stage
-  orchestrator/     notes for the FS -> kaiHEN stage pipeline
+  firmware/esp32/    ESP-IDF firmware (tested entry)
+  transport/
+    linux/           Linux PC entry (untested)
+    nro/             Switch 1 homebrew entry (untested)
+    build-payload.js shared chat payload builder
+    compress.js      shared chat compressor
+  sdcard/            SD card staging and pinned prebuilt binaries
+  userland/          notes for the CivSwitch userland loader
+  fs/                notes for the CivSwitchFS stage
+  kaihen/            notes for the kaiHEN installer stage
+  orchestrator/      notes for the FS -> kaiHEN stage pipeline
 third_party/
-  CivSwitch/        fork: game-side userland loader
-  CivSwitchFS/      fork: FS elevation + autoloader overlay
-  kaihen/           fork: HEN / RO / bootstrap
-docs/               architecture, build, flashing, compatibility
+  CivSwitch/         fork: game-side userland loader
+  CivSwitchFS/       fork: FS elevation + autoloader overlay
+  kaihen/            fork: HEN / RO / bootstrap
+docs/                architecture, build, flashing, compatibility
 ```
 
 ## 1. Prepare the SD card
@@ -64,9 +76,9 @@ card. The card must contain:
 
 `kaihen/plugins/ftpd.nso` is optional (FTP server on port 5000).
 
-## 2. Build and flash the ESP32
+## 2. Build the save blobs
 
-Install ESP-IDF **v6.1**, Node.js 20+, and Python 3. Then:
+All three entries deliver the same two blobs. Build them once:
 
 ```sh
 git submodule update --init --recursive
@@ -80,25 +92,30 @@ git submodule update --init --recursive
 cp /path/to/prod.keys packages/firmware/esp32/prod.keys
 
 cd packages/firmware/esp32
-source /path/to/esp-idf/export.sh
-python3 tools/build_and_flash.py --keys prod.keys \
-  --port /dev/cu.usbmodemXXXX --flash
+source /path/to/esp-idf/export.sh          # ESP32 entry only
+python3 tools/build_and_flash.py --keys prod.keys
 ```
 
-The build creates the persistent autoloader save:
+Outputs:
 
 ```text
 blobs/blob_tpl.bin    save template
 blobs/blob_apply.bin  save installer + compressed CFS stage
 ```
 
-The storage partition is 4 MB. The board resets after flashing.
+The storage partition is 4 MB.
 
 kaiHEN only arms for **Switch 2 games**: titles whose program ID has the `0x04`
 family prefix (`0x04xxxxxxxxxxxxxx`). A Switch 1 game (`0x0100...`) runs from its
 own process and is not a supported target for this chain.
 
-## 3. Install the autoloader save
+## 3a. Install with the ESP32 (tested)
+
+```sh
+cd packages/firmware/esp32
+python3 tools/build_and_flash.py --keys prod.keys \
+  --port /dev/cu.usbmodemXXXX --flash
+```
 
 1. Insert the SD card into the console.
 2. Start Civ VII.
@@ -107,6 +124,46 @@ own process and is not a supported target for this chain.
 5. Wait for `PERSIST INSTALL DONE - restart the game, then Load Game`.
 6. Close Civ VII completely, reopen it, choose **Load Game**, and load
    `XSTRIG.Civ7Save`.
+
+## 3b. Install with a Linux PC (not tested yet)
+
+Requirements: real Linux (not WSL), one Wi-Fi radio with nl80211,
+NetworkManager, Python 3.12+, `libcap2-bin`.
+
+```sh
+cd packages/transport/linux
+npm install                 # creates ldn/.venv, asks sudo for setcap
+cp /path/to/prod.keys prod.keys
+node index.js --verbose
+```
+
+Keep the Civ VII wireless lobby open. The script temporarily releases the
+Wi-Fi radio, joins the lobby over LDN, sends the payload, streams the save over
+UDP 9027, and restores networking when it finishes. Then close Civ VII,
+reopen it, and `Load Game`.
+
+See [`packages/transport/linux/README.md`](packages/transport/linux/README.md).
+
+## 3c. Install with a Switch 1 NRO (not tested yet)
+
+Requirements: Switch 1 homebrew, `ldn_mitm` removed and the console rebooted,
+both consoles on the same Wi-Fi/LAN, Civ VII 1.0.0 on the Switch 2.
+
+```sh
+cd packages/transport/nro
+export DEVKITPRO=/opt/devkitpro
+make
+```
+
+Copy `civ-autoloader-nx.nro` to `/sdcard/switch/` and launch it from the
+Album. Join the lobby with **A**, install the save, wait for `INSTALL DONE`,
+then close Civ VII on the Switch 2, reopen it, and `Load Game`.
+
+**Warning:** this replaces every Civilization VII single-player save.
+
+See [`packages/transport/nro/README.md`](packages/transport/nro/README.md).
+
+## 4. After the install
 
 The save runs:
 

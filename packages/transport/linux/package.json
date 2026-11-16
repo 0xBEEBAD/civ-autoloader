@@ -1,0 +1,11 @@
+{
+  "name": "civ-autoloader-linux",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Linux LDN transport for civ-autoloader",
+  "scripts": {
+    "postinstall": "bash bash/setup.sh",
+    "start": "node index.js"
+  },
+  "license": "GPL-3.0-only"
+}

@@ -11,9 +11,21 @@ packages/firmware/esp32/main/build_time.h
 
 # User-provided keys and local secrets.  Never commit these.
 packages/firmware/esp32/prod.keys
+packages/transport/linux/prod.keys
 prod.keys
 *.pem
 *.key
+
+# Linux LDN helper: venv, capabilities, generated assets
+packages/transport/linux/ldn/.venv/
+packages/transport/linux/.venv/
+packages/transport/linux/*.b64
+
+# Switch 1 NRO build output
+packages/transport/nro/build/
+packages/transport/nro/*.elf
+packages/transport/nro/*.nro
+packages/transport/nro/*.nacp
 
 # Local logs
 logs/

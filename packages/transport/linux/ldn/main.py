@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Scan LDN networks, connect to a host and send messages in a Civ VII lobby."""
+
+import importlib
+import logging
+import signal
+import sys
+
+import connection
+from cli import build_parser
+
+
+def main(argv=None):
+    cli = build_parser()
+    args = cli.parse_args(argv)
+
+    if bool(args.installer_template) != bool(args.installer_apply):
+        cli.error("--installer-template and --installer-apply must be used together")
+    for path in (args.installer_template, args.installer_apply):
+        if path is not None and not path.is_file():
+            cli.error(f"installer asset not found: {path}")
+
+    errors = connection.hardware_check(args.phy, args.ifname)
+    if errors:
+        for e in errors:
+            print(f"[!] {e}", file=sys.stderr)
+        return 1
+
+    # Report missing packages before attempting the LDN scan.
+    try:
+        importlib.import_module("ldn")
+        importlib.import_module("trio")
+    except ImportError as e:
+        print(
+            f"Missing dependency: {e.name}. Run: pip install -r ldn/requirements.txt",
+            file=sys.stderr,
+        )
+        return 1
+
+    connection.install_ip_fallback()
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
+    import session
+    trio = importlib.import_module("trio")
+    signal.signal(signal.SIGINT, interrupt)
+    signal.signal(signal.SIGTERM, interrupt)
+
+    try:
+        return trio.run(session.run, args)
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        return 130
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def interrupt(signum, frame):
+    raise KeyboardInterrupt
+
+
+if __name__ == "__main__":
+    sys.exit(main())

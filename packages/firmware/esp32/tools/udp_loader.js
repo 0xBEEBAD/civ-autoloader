@@ -167,6 +167,13 @@
                 for (let k = 0; k < 3; k++) udp_tx("D");
                 if (stages.includes("dev"))
                     globalThis.__CIVSWITCH_DEV__ = true;
+                // Keep the caller informed: "I:OK" / "I:ERR" is what the PC
+                // and NRO entry points wait for instead of reading the screen.
+                let installOk = null;
+                const report = ok => {
+                    installOk = ok;
+                    for (let i = 0; i < 3; i++) udp_tx(ok ? "I:OK" : "I:ERR");
+                };
                 for (const stage of stages) {
                     if (stage === "dev") {
                         continue;
@@ -175,6 +182,7 @@
                             await eval_payload("PERSIST", js.slice(0, needJ).join(""));
                             if (!window.__cfsPersistInstaller) {
                                 await log("E: persist installer unavailable");
+                                report(false);
                                 continue;
                             }
                             const token = "ldn";
@@ -184,10 +192,17 @@
                                 window.__cfsPersistInstaller.stageChunk(
                                     token, i, i * 1100, part);
                             }
-                            await window.__cfsPersistInstaller.installFromTemplate();
-                            await log("PERSIST INSTALL DONE - restart the game, then Load Game");
+                            try {
+                                await window.__cfsPersistInstaller.installFromTemplate();
+                                await log("PERSIST INSTALL DONE - restart the game, then Load Game");
+                                report(true);
+                            } catch (e) {
+                                await log("E: persist install failed: " + e.message);
+                                report(false);
+                            }
                         } else {
                             await log("stage persist skipped (missing blobs)");
+                            report(false);
                         }
                     } else if (stage === "save") {
                         if (needJ) {
@@ -273,14 +288,19 @@
                         }
                         await try_finish();
                     } else if (c === 'A') {
-                        const p2 = s.indexOf(':', p + 1);
-                        const p3 = p2 > 0 ? s.indexOf(':', p2 + 1) : -1;
-                        const p4 = p3 > 0 ? s.indexOf(':', p3 + 1) : -1;
-                        needT = +s.slice(1, p);
-                        needJ = p2 > 0 ? +s.slice(p + 1, p2) : 0;
-                        needC = p3 > 0 ? +s.slice(p2 + 1, p3) : 0;
-                        needS = p4 > 0 ? +s.slice(p3 + 1, p4) : 0;
-                        const ipText = p4 > 0 ? s.slice(p4 + 1) : (p3 > 0 ? s.slice(p3 + 1) : (p2 > 0 ? s.slice(p2 + 1) : ""));
+                        // Header forms:
+                        //   A<t>:<j>:<c>:<s>:<ip>   (our ESP32 / Linux client)
+                        //   A<t>:<j>:<ip>          (CivSwitchLDN-style client)
+                        const fields = s.slice(1).split(':');
+                        const last = fields[fields.length - 1] || '';
+                        const hasIp = last.split('.').length === 4;
+                        const nums = (hasIp ? fields.slice(0, -1) : fields)
+                            .map(value => +value);
+                        const ipText = hasIp ? last : '';
+                        needT = nums[0] || 0;
+                        needJ = nums[1] || 0;
+                        needC = nums[2] || 0;
+                        needS = nums[3] || 0;
                         if (ipText) globalThis.__AUTOLOADER_PEER_IP = ipText;
                         if (ipText && !connected) {
                             const ip = ipText.split('.');
