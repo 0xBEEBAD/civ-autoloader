@@ -8,10 +8,11 @@ With the payload it also carries the full persistent installer (the 1 MB save
 template), so one run does everything: exploit → installer → back to the normal
 TCP loader on `:9026`.
 
-When the install finishes the board switches its radio to an access point
+When an install finishes the board switches its radio back to an access point
 called **N-Hole**, which serves a Nintendo-aware DNS sinkhole and a mini HTTP
-responder (the nanodns policy, on the board). Hold **BOOT** for 1.5 s to leave
-the hotspot and run the LDN flow again.
+responder (the nanodns policy, on the board). The hotspot is the board's idle
+state: it comes up at power-on, and a **BOOT** hold runs one LDN install and
+returns to it.
 
 ## Why another board firmware?
 
@@ -83,24 +84,25 @@ in ROM download mode).
 
 ## Run it
 
-The board has one loop:
+The board's idle state is the hotspot. A BOOT hold runs one install:
 
 ```text
-power on -> wait 1 s -> LDN flow (scan, join, install)
-         -> N-Hole hotspot up
-         -> hold BOOT 1.5 s -> LDN flow again -> N-Hole ...
+power on -> N-Hole hotspot
+         -> hold BOOT 1.5 s -> LDN flow (scan, join, install) -> N-Hole
+         -> ...
 ```
 
-1. Start Civ VII and open `MULTIPLAYER → WIRELESS → CREATE GAME → HOST LOBBY`.
-2. Power the board (USB power is enough; it does not need to be plugged into
-   the console). The LDN flow starts by itself after one second.
-3. The board scans, joins, authenticates and sends the payload automatically.
+1. Power the board (USB power is enough; it does not need to be plugged into
+   the console). It comes up as the `N-Hole` hotspot right away.
+2. Start Civ VII and open `MULTIPLAYER → WIRELESS → CREATE GAME → HOST LOBBY`.
+3. Hold **BOOT** for 1.5 s. The board leaves the hotspot and starts scanning.
+4. The board scans, joins, authenticates and sends the payload automatically.
 The original CivSwitch save is installed first. After that the board streams
 CivSwitchFS over the same LDN channel and the console evaluates it in RAM; the
 CivSwitchFS save installer is **not** used. If the CFS stage is absent the
 firmware behaves as before.
 
-4. The console shows:
+5. The console shows:
 
 ```text
 civ-autoloader
@@ -112,18 +114,33 @@ PERSIST INSTALL DONE - restart the game, then Load Game
 PERSIST RETURNED
 ```
 
-5. The board prints `N-Hole up: ssid=N-Hole ip=192.168.4.1` and parks there.
-6. Restart the game, choose **Load Game**, and load `XSTRIG.Civ7Save`.
+6. The board prints `N-Hole up: ssid=N-Hole ip=192.168.4.1` and is back in the
+   hotspot.
+7. Restart the game, choose **Load Game**, and load `XSTRIG.Civ7Save`.
    The save runs CivSwitchFS, prepares kaiHEN, and boots it.
 
-Each install needs a fresh lobby. After the save is installed, later runs only
-need Load Game.
+Each install needs a fresh lobby, which means a fresh BOOT hold. After the save
+is installed, later runs only need Load Game.
 
-Nothing happens if no lobby is open? The board keeps rescanning every ~11 s
-until it finds one, and **BOOT** abandons the scan and goes straight to the
-hotspot.
+### What BOOT does, and when
 
-While `wait-log.py` is running, typing `nhole` in its terminal does the same as
+| State | BOOT hold (1.5 s) |
+|---|---|
+| In the hotspot | leave the hotspot and run one LDN install |
+| Scanning, **no lobby visible** | cancel the scan and go back to the hotspot |
+| **In the lobby** (associated + authenticated) | **ignored** — the pass always runs to completion |
+| Installing / streaming | **ignored** — the pass always runs to completion |
+
+Once the board has joined a lobby the button does nothing at all: aborting in
+the middle of the association or the payload stream is what wedges the console
+side. If the join fails, or the lobby is closed while scanning for the next
+round, BOOT is honoured again, so the board is never stuck scanning forever.
+
+`N-Hole down: q=... served=... blocked=... nx=... http=.../...` is printed when
+the hotspot stops, so every install starts with a summary of the previous
+hotspot session on the serial log.
+
+While `wait-log.py` is running, typing `ldn` in its terminal does the same as
 the button, which is handy on a board whose BOOT button is hard to reach.
 
 ## N-Hole
@@ -167,9 +184,6 @@ hotspot:
   means N-Hole is not a general-purpose internet hotspot.
 - **The served address is the AP's own address**, printed at start-up. The
   console plugin answers `127.0.0.1` because it runs on the console itself.
-
-`N-Hole down: q=... served=... blocked=... nx=... http=.../...` is printed when
-the hotspot stops, so a BOOT re-run leaves a summary on the serial log.
 
 ## SD card preparation
 
@@ -265,8 +279,8 @@ python3 tools/wait-log.py --port /dev/cu.usbmodem2101
 
 `wait-log.py` exits on `PERSIST INSTALL DONE` or
 `AUTOLOADER: HEN: boot sequence complete` (success), or on the failure lines.
-With `--board-ready` it also exits on `N-Hole up:`, i.e. as soon as the board
-side is done, before you reach Load Game.
+`--board-ready` additionally exits on `N-Hole up:`, i.e. as soon as the board is
+back in the hotspot (it is off by default: that line also appears at power-on).
 It writes the full run to `/tmp/autoloader-*.log`.
 It reopens the port automatically when the board resets and USB-Serial/JTAG
 re-enumerates, so start it before pressing RESET.
@@ -291,6 +305,7 @@ and the console payload logs share the same serial stream.
 | Console shows nothing | the chat XSS did not render; check the lobby chat |
 | Board not detected by esptool | hold BOOT, tap RESET, release BOOT |
 | Board ignores BOOT after boot | BOOT is held at reset -> ROM download mode; tap RESET to boot the firmware |
+| Board did not react to BOOT | hold it for the full 1.5 s; a shorter press is ignored by design |
 
 ## Persistent autoloader save (Load Game)
 

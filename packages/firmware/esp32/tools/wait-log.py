@@ -30,9 +30,9 @@ import tty
 SUCCESS = (
     "AUTOLOADER: kaiHEN installation complete. You can close Civ7 now.",
 )
-# The board parks in N-Hole after the installer returns. Right after a normal
-# install this fires before the console reaches kaiHEN, so it is only a success
-# signal when asked for (--board-ready).
+# The board returns to N-Hole after every pass. It also comes up there at
+# power-on, so this is a state marker, not a finish line: --board-ready is off
+# by default for exactly that reason.
 BOARD_READY = (
     "N-Hole up:",
 )
@@ -70,7 +70,8 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true",
                     help="do not exit on success/failure (bridge mode)")
     ap.add_argument("--board-ready", action="store_true",
-                    help="also exit on 'N-Hole up:' (board side, before Load Game)")
+                    help="also exit on 'N-Hole up:' (the board is back in the "
+                         "hotspot, e.g. right after power-on)")
     ap.add_argument("--cmd-fifo", default="/tmp/autoloader-cmd",
                     help="FIFO used to type commands into the board serial")
     args = ap.parse_args()

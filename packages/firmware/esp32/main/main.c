@@ -35,7 +35,6 @@ static const char *TAG = "ldnpoc";
 #define BOOT_GPIO 0
 #define BOOT_POLL_MS 50
 #define BOOT_HOLD_MS 1500
-#define LDN_START_DELAY_MS 1000
 #define SCAN_CHANNELS {1, 6, 11}
 #define DWELL_MS 600
 #define FRAME_MAX 1392
@@ -677,41 +676,59 @@ static void derive_and_associate(void) {
     start_associate();
 }
 
-/* Set by boot_task() when BOOT has been held; consumed by the active phase. */
+/* Set by boot_task() or the serial command; consumed by the active phase. */
 static volatile bool s_boot_request;
 
-/* One scan round: 3 channels x 6 rounds (~11 s), abortable with BOOT. */
-static void do_scan(void) {
+/* True while a request is pending, without consuming it. */
+static bool button_request_pending(void) {
+    return s_boot_request || bridge_button_pending();
+}
+
+typedef enum { SCAN_FOUND, SCAN_NONE, SCAN_ABORTED } scan_result_t;
+
+/* One scan round: 3 channels x 6 rounds (~11 s).
+ * A captured frame ends the round and starts the association. BOOT can only
+ * end the round while no frame has been seen, i.e. while there is no lobby. */
+static scan_result_t do_scan(void) {
     static const uint8_t chans[] = SCAN_CHANNELS;
     ESP_LOGI(TAG, "=== scan start ===");
     esp_wifi_disconnect();
     vTaskDelay(pdMS_TO_TICKS(200));
     s_got_frame = false;
     s_state = ST_SCANNING;
-    for (int r = 0; r < 6 && !s_got_frame && !s_boot_request; r++) {
-        for (size_t i = 0; i < sizeof(chans) && !s_got_frame && !s_boot_request; i++) {
+    bool abort = false;
+    for (int r = 0; r < 6 && !s_got_frame && !abort; r++) {
+        for (size_t i = 0; i < sizeof(chans) && !s_got_frame; i++) {
             esp_wifi_set_channel(chans[i], WIFI_SECOND_CHAN_NONE);
             vTaskDelay(pdMS_TO_TICKS(DWELL_MS));
+            if (button_request_pending()) { abort = true; break; }
         }
     }
     if (s_got_frame) {
         ESP_LOGI(TAG, "frame captured; deriving + associating...");
         derive_and_associate();
-    } else if (s_boot_request) {
+        return SCAN_FOUND;
+    }
+    if (abort) {
         ESP_LOGI(TAG, "scan interrupted by BOOT");
         s_state = ST_IDLE;
-    } else {
-        ESP_LOGI(TAG, "no LDN frame found; idle");
-        s_state = ST_IDLE;
+        return SCAN_ABORTED;
     }
+    ESP_LOGI(TAG, "no LDN frame found; another round");
+    s_state = ST_IDLE;
+    return SCAN_NONE;
 }
 
 /* ------------------------------------------------------------ run control */
 
-/* One button, two phases:
- *   scanning  -> stop looking for a lobby and park in N-Hole
- *   parked    -> leave N-Hole and run the LDN flow again
- * The request is set by boot_task() and consumed by whichever phase is active. */
+/* The board's idle state is the hotspot. A BOOT hold starts one LDN install;
+ * the pass returns to the hotspot when it ends.
+ *
+ * BOOT is only honoured while no lobby has been joined. As soon as a scan
+ * captures a frame the pass runs to completion, because aborting in the middle
+ * of the association or the install is what breaks the console side. If the
+ * join fails, or the lobby dies before the next pass, the next scan is
+ * cancellable again, so the board is never stuck. */
 
 /* Clears the LDN state so the next pass starts from scratch. */
 static void reset_ldn_state(void) {
@@ -734,10 +751,17 @@ static bool boot_take_request(void) {
     return true;
 }
 
-/* BOOT or the serial command "nhole". Lets a board without a usable button
- * (or a test bench) reach the hotspot without waiting for a lobby. */
-static bool run_requested(void) {
-    return boot_take_request() | bridge_take_nhole_request();
+/* Clears any pending request. Used where the button must have no effect. */
+static void drain_requests(void) {
+    s_boot_request = false;
+    bridge_take_button_request();
+}
+
+/* BOOT, or the serial command "ldn" for boards whose button is unreachable. */
+static bool button_take_request(void) {
+    bool serial = bridge_take_button_request();
+    bool boot = boot_take_request();
+    return boot || serial;
 }
 
 /* Watches BOOT in the background. A hold of BOOT_HOLD_MS raises one request;
@@ -762,17 +786,31 @@ static void boot_task(void *argument) {
     }
 }
 
-/* One LDN pass: scan, join, install.
+/* One LDN pass: scan until a lobby is visible, then join and install.
  * Returns true when the installer ran, false when BOOT cut the scan short. */
 static bool ldn_pass(void) {
     reset_ldn_state();
     for (;;) {
-        if (run_requested()) {
-            ESP_LOGI(TAG, "request: leaving the LDN scan");
-            return false;
-        }
         if (!s_auth_ok) {
-            do_scan();
+            /* BOOT cancels a scan, i.e. only while no lobby is entered. */
+            scan_result_t result = do_scan();
+            if (result == SCAN_ABORTED) {
+                drain_requests();     /* do not bounce out of the hotspot */
+                return false;
+            }
+            if (result == SCAN_FOUND) {
+                if (s_auth_ok) {
+                    /* In the lobby now: the rest of the pass ignores BOOT. */
+                    drain_requests();
+                    ESP_LOGI(TAG, "lobby joined; BOOT is ignored until the pass ends");
+                } else if (button_take_request()) {
+                    /* The join failed and the button was pressed meanwhile:
+                     * there is no lobby, so respect it and go back. */
+                    ESP_LOGI(TAG, "join failed and BOOT is held; back to the hotspot");
+                    drain_requests();
+                    return false;
+                }
+            }
         } else if (!s_have_ip) {
             adv_find_ip();
         } else if (!s_sent) {
@@ -801,43 +839,38 @@ void app_main(void) {
     bridge_start();
     if (xTaskCreate(boot_task, "boot-key", 2048, NULL, 2, NULL) != pdPASS)
         ESP_LOGE(TAG, "boot task create failed");
-
-    /* Wait a moment before scanning so the console can bring the lobby up
-     * first. Holding BOOT at power-on is not usable here: on the ESP32-S3 that
-     * pin selects the ROM download mode and the firmware would never run. */
-    ESP_LOGI(TAG, "starting the LDN flow in %d ms", LDN_START_DELAY_MS);
-    vTaskDelay(pdMS_TO_TICKS(LDN_START_DELAY_MS));
-    boot_take_request();     /* drop anything pressed during that wait */
+    drain_requests();
 
     for (;;) {
-        bool installed = ldn_pass();
-
-        ESP_LOGI(TAG, "switching the radio to %s", NHOLE_SSID);
+        /* Idle state: the hotspot. */
         esp_err_t err = nhole_start();
         if (err != ESP_OK) {
-            /* No hotspot: wait for BOOT with the radio parked, so a re-run is
-             * still possible instead of an unreachable board. */
+            /* No hotspot and no button response would leave the board
+             * unreachable, so retry the radio before giving up. */
             ESP_LOGE(TAG, "%s failed to start: %s", NHOLE_SSID, esp_err_to_name(err));
             nhole_stop();
             radio_restore_station();
             ESP_LOGI(TAG, "hold BOOT for %d ms to retry", BOOT_HOLD_MS);
-            while (!run_requested())
+            while (!button_take_request())
                 vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
-        if (installed)
-            ESP_LOGI(TAG, "install finished; %s is up", NHOLE_SSID);
-        else
-            ESP_LOGI(TAG, "no install this pass; %s is up", NHOLE_SSID);
-        ESP_LOGI(TAG, "parked in %s; hold BOOT for %d ms for another LDN run",
+        ESP_LOGI(TAG, "parked in %s; hold BOOT for %d ms to run one LDN install",
                  NHOLE_SSID, BOOT_HOLD_MS);
-
-        while (!run_requested())
+        while (!button_take_request())
             vTaskDelay(pdMS_TO_TICKS(100));
 
-        ESP_LOGI(TAG, "request: leaving %s", NHOLE_SSID);
+        ESP_LOGI(TAG, "BOOT: leaving %s for one LDN install", NHOLE_SSID);
         nhole_stop();
         radio_restore_station();
+
+        bool installed = ldn_pass();
+        /* A press during the install must not bounce straight back out. */
+        drain_requests();
+        if (installed)
+            ESP_LOGI(TAG, "install finished; back to %s", NHOLE_SSID);
+        else
+            ESP_LOGI(TAG, "install cancelled; back to %s", NHOLE_SSID);
     }
 }

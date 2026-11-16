@@ -135,16 +135,18 @@ python3 tools/build_and_flash.py --keys prod.keys \
 1. Insert the SD card into the console.
 2. Start Civ VII.
 3. `MULTIPLAYER -> WIRELESS -> CREATE GAME -> HOST LOBBY`.
-4. Power the board (USB power is enough). It waits 1 s, then scans and
-   installs.
-5. Wait for `PERSIST INSTALL DONE - restart the game, then Load Game`.
-6. Close Civ VII completely, reopen it, choose **Load Game**, and load
+4. Power the board (USB power is enough). It comes up as the **N-Hole**
+   hotspot.
+5. Hold **BOOT** for 1.5 s: the board leaves the hotspot, scans and installs.
+6. Wait for `PERSIST INSTALL DONE - restart the game, then Load Game`.
+7. Close Civ VII completely, reopen it, choose **Load Game**, and load
    `XSTRIG.Civ7Save`.
 
-When the installer returns, the board becomes an open hotspot called **N-Hole**
-with a Nintendo-aware DNS sinkhole and a mini HTTP responder (the nanodns
-policy). Hold **BOOT** for 1.5 s to run the LDN flow again from the hotspot.
-N-Hole has no uplink, so it answers Nintendo names only — see
+The install ends back in the **N-Hole** hotspot, which serves a Nintendo-aware
+DNS sinkhole and a mini HTTP responder (the nanodns policy). While it is
+scanning and no lobby is visible, another BOOT hold returns to the hotspot; once
+the board has joined a lobby the button is ignored until the pass ends. N-Hole
+has no uplink, so it answers Nintendo names only — see
 [`packages/firmware/esp32/README.md`](packages/firmware/esp32/README.md#n-hole).
 
 ## 3b. Install with a Linux PC (not tested yet)

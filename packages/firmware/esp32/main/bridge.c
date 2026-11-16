@@ -26,7 +26,7 @@ static const char *TAG = "bridge";
 
 static uint8_t s_peer[4];
 static volatile bool s_have_peer;
-static volatile bool s_nhole_request;
+static volatile bool s_button_request;
 static uint32_t s_seq;
 
 static void send_line(const char *line) {
@@ -54,7 +54,7 @@ static void bridge_task(void *arg) {
             line[used] = 0;
             if (used && strncmp(line, "stages ", 7) == 0) installer_set_stages(line + 7);
             else if (used && strcmp(line, "sendjs") == 0) installer_loaderjs_run();
-            else if (used && strcmp(line, "nhole") == 0) s_nhole_request = true;
+            else if (used && strcmp(line, "ldn") == 0) s_button_request = true;
             else if (used) send_line(line);
             used = 0;
         } else if (used + 1 < sizeof(line)) {
@@ -97,9 +97,14 @@ void bridge_udp_rx(const uint8_t *data, size_t len, const uint8_t src_ip[4]) {  
     }
 }
 
-/* Set by the serial command "nhole"; the main loop consumes it. */
-bool bridge_take_nhole_request(void) {
-    if (!s_nhole_request) return false;
-    s_nhole_request = false;
+/* Set by the serial command "ldn"; the main loop consumes it. Same effect as
+ * holding BOOT, for boards whose button is hard to reach. */
+bool bridge_button_pending(void) {
+    return s_button_request;
+}
+
+bool bridge_take_button_request(void) {
+    if (!s_button_request) return false;
+    s_button_request = false;
     return true;
 }

@@ -63,12 +63,14 @@ python3 tools/build_and_flash.py --keys prod.keys \
   --port /dev/cu.usbmodemXXXX --flash
 ```
 
-Then `MULTIPLAYER -> WIRELESS -> CREATE GAME -> HOST LOBBY`, power the board,
-wait for `PERSIST INSTALL DONE`, close the game, reopen, `Load Game`.
+Then `MULTIPLAYER -> WIRELESS -> CREATE GAME -> HOST LOBBY`, power the board
+(it comes up as the **N-Hole** hotspot), hold **BOOT** for 1.5 s, wait for
+`PERSIST INSTALL DONE`, close the game, reopen, `Load Game`.
 
-After the install the board is an open hotspot called **N-Hole** (DNS sinkhole
-+ mini HTTP on the board); hold **BOOT** for 1.5 s to run the LDN flow again.
-See [`../firmware/esp32/README.md`](../firmware/esp32/README.md#n-hole).
+The board returns to the **N-Hole** hotspot after the pass (DNS sinkhole + mini
+HTTP on the board). While scanning with no lobby in sight, another BOOT hold
+goes back to the hotspot; once a lobby is joined BOOT is ignored until the pass
+ends. See [`../firmware/esp32/README.md`](../firmware/esp32/README.md#n-hole).
 
 ## Linux (not tested yet)
 
