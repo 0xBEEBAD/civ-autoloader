@@ -8,6 +8,7 @@
 
 #include "installer.h"
 #include "installer_payload.h"
+#include "installer_classic_payload.h"
 #include "save_template_bin.h"
 
 #include <errno.h>
@@ -98,11 +99,16 @@ static int send_chunk(Link *link, char kind, unsigned index) {
     return send_datagram(link, packet, (size_t)prefix + length);
 }
 
-InstallerResult installer_run_over_ldn(LdnIpv4Address host,
+InstallerResult installer_run_over_ldn(LdnIpv4Address host, InstallerKind kind,
                                        InstallerProgress on_progress) {
     Link link = {0};
     InstallerResult result = fail("Installer did not start", 0, 0, 0);
     bool socket_owned = false;
+
+    const char *apply_js = kind == InstallerKind_Classic ? classic_apply_js
+                                                         : installer_apply_js;
+    const char *stage_name = kind == InstallerKind_Classic ? "save"
+                                                             : "persist";
 
     // game_join() keeps the libnx socket driver open for the chat channel.
     // socketInitialize() returns AlreadyInitialized in that case; reuse the
@@ -146,8 +152,10 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
     setsockopt(link.fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     // Encode both payloads once.
+    // The T stream is the pristine template; the J stream is the installer
+    // for the requested save (autoloader or classic).
     size_t template_b64_size = ((save_template_bin_size + 2) / 3) * 4;
-    size_t apply_b64_size = ((sizeof(installer_apply_js) - 1 + 2) / 3) * 4;
+    size_t apply_b64_size = ((strlen(apply_js) + 2) / 3) * 4;
     link.template_b64 = malloc(template_b64_size + 8);
     link.apply_b64 = malloc(apply_b64_size + 8);
     if (!link.template_b64 || !link.apply_b64) {
@@ -161,9 +169,8 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
         goto finish;
     }
     link.template_b64[encoded] = 0;
-    encoded = encode_base64(link.apply_b64,
-                            (const u8 *)installer_apply_js,
-                            sizeof(installer_apply_js) - 1);
+    encoded = encode_base64(link.apply_b64, (const u8 *)apply_js,
+                            strlen(apply_js));
     link.apply_b64[encoded] = 0;
 
     link.template_chunks = (unsigned)((encoded = strlen(link.template_b64)) +
@@ -171,12 +178,18 @@ InstallerResult installer_run_over_ldn(LdnIpv4Address host,
     link.apply_chunks = (unsigned)((strlen(link.apply_b64) + CHUNK - 1) / CHUNK);
 
     // The console evaluates the chat payload and only then binds :9027.
-    // Match the ESP32 firmware's settle time, and announce the persist stage
-    // so a payload that still defaults to the older stage list cannot start
-    // the wrong pipeline.
+    // Match the ESP32 firmware's settle time, and announce the stage so a
+    // payload that defaults to another stage list cannot start the wrong
+    // pipeline: "persist" for the autoloader save, "save" for the classic one.
     svcSleepThread(800000000ULL);
+    char announce[24];
+    int announce_size = snprintf(announce, sizeof(announce), "M%s", stage_name);
+    if (announce_size <= 0) {
+        result = fail("Stage header build failed", EINVAL, 0, 0);
+        goto finish;
+    }
     for (int attempt = 0; attempt < 3; attempt++) {
-        if (send_datagram(&link, "Mpersist", 8) < 0) {
+        if (send_datagram(&link, announce, (size_t)announce_size) < 0) {
             result = fail("Stage header send failed", errno, 0, 0);
             goto finish;
         }

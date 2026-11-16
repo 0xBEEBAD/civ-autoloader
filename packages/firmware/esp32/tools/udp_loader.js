@@ -154,11 +154,13 @@
             async function eval_payload(label, base64) {
                 const src = b64d(base64);
                 await log("RUNNING " + label + " (" + src.length + " bytes)");
-                try { await eval(src); } catch (e) {
+                let ok = false;
+                try { await eval(src); ok = true; } catch (e) {
                     await log("E: " + e.message);
                     await log(e.stack);
                 }
                 await log(label + " RETURNED");
+                return ok;
             }
 
             async function finish_install() {
@@ -205,11 +207,21 @@
                             report(false);
                         }
                     } else if (stage === "save") {
-                        if (needJ) {
+                        if (needJ && gotJ >= needJ && needT && gotT >= needT) {
                             window.__tpl = tpl.slice(0, needT);
-                            await eval_payload("INSTALLER", js.slice(0, needJ).join(""));
+                            globalThis.__CIVCLASSIC_DONE = false;
+                            const ok = await eval_payload(
+                                "INSTALLER", js.slice(0, needJ).join(""));
+                            if (ok && globalThis.__CIVCLASSIC_DONE) {
+                                await log("INSTALL DONE - restart the game, then Load Game");
+                                report(true);
+                            } else {
+                                await log("E: classic install failed");
+                                report(false);
+                            }
                         } else {
-                            await log("stage save skipped (no blob)");
+                            await log("stage save skipped (missing blobs)");
+                            report(false);
                         }
                     } else if (stage === "cfs") {
                         if (needC && gotC >= needC) {

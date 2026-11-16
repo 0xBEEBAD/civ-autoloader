@@ -8,6 +8,9 @@
 // This build tests native LDN and the Civilization VII Remote JS Loader bootstrap.
 #define MAX_NETWORKS 24
 
+#define APP_TITLE "civ-autoloader NX by sean"
+#define APP_VERSION "v0.10"
+
 static LdnNetworkInfo networks[MAX_NETWORKS];
 static int network_count;
 static int selected;
@@ -24,9 +27,18 @@ static bool install_tested;
 // Whether the user has explicitly run a scan (pressed X). The startup
 // auto-scan does not set this, so the empty-scan hint waits for a manual scan.
 static bool user_scanned;
+// R / ZR with no lobby joined arms one of these: the next scan auto-joins when
+// there is exactly one room and starts the requested install right away.
+typedef enum {
+    Pending_None = 0,
+    Pending_Autoloader,
+    Pending_Classic,
+} PendingAction;
+static PendingAction pending_action;
 
 static void show_progress(unsigned sent, unsigned total) {
     consoleClear();
+    printf("%s %s\n\n", APP_TITLE, APP_VERSION);
     printf("Sending game chat: %u/%u\n", sent, total);
     printf("Keep the Switch 2 lobby open.\n");
     consoleUpdate(NULL);
@@ -35,7 +47,7 @@ static void show_progress(unsigned sent, unsigned total) {
 static void show_install_progress(const char *message, unsigned step,
                                   unsigned total) {
     consoleClear();
-    printf("civ-autoloader NX v0.1.0 - one-click save\n\n");
+    printf("%s %s\n\n", APP_TITLE, APP_VERSION);
     printf("%s\n", message);
     if (total) printf("Progress: %u/%u\n", step, total);
     printf("\nDo not close the game or either console.\n");
@@ -214,10 +226,58 @@ static void connect_selected(void) {
     }
 }
 
+// Send the loader, then stream the save over the still-open LDN link. The
+// caller must already have joined a lobby.
+static void run_install(InstallerKind kind) {
+    LdnIpv4Address host = networks[selected].nodes[0].ip_addr;
+    game_result = game_send(true, show_progress);
+    bool loader_sent = game_result.completed;
+    game_tested = true;
+    install_tested = false;
+    if (!loader_sent) return;
+
+    show_install_progress(kind == InstallerKind_Classic
+                              ? "Installing CivSwitch loader save"
+                              : "Installing autoloader (kaiHEN) save",
+                          0, 0);
+    install_result = installer_run_over_ldn(host, kind, show_install_progress);
+    install_tested = true;
+    // The save is on the card once the console answers I:OK: no retry is
+    // possible in this session, so drop LDN and show the result.
+    if (install_result.completed) close_station();
+}
+
+// R / ZR pressed with no lobby joined: start immediately when exactly one
+// room is visible, otherwise leave the action armed for the manual join.
+static void auto_join_pending(void) {
+    if (pending_action == Pending_None || game_joined) return;
+    if (network_count != 1) return;
+    selected = 0;
+    connect_selected();
+    if (!game_joined) return;
+    PendingAction action = pending_action;
+    pending_action = Pending_None;
+    run_install(action == Pending_Classic ? InstallerKind_Classic
+                                          : InstallerKind_Autoloader);
+}
+
+static void request_install(PendingAction action) {
+    pending_action = action;
+    install_tested = false;
+    user_scanned = true;
+    scan_networks();
+    auto_join_pending();
+}
+
 static void draw(void) {
     consoleClear();
-    printf("civ-autoloader NX v0.1.0\n");
-    printf("A join  R loader  ZR one-click save\n\n");
+    printf("%s %s\n", APP_TITLE, APP_VERSION);
+    printf("press ZR: install CivSwitch\n");
+    printf("press R: install autoloader (kaiHEN)\n\n");
+    if (pending_action != Pending_None)
+        printf("Waiting: %s - scan and press A when one lobby shows.\n\n",
+               pending_action == Pending_Classic ? "ZR CivSwitch"
+                                                 : "R autoloader");
     printf("%s: 0x%08X\n", last_operation, last_result);
     printf("Found %d LDN network(s)\n\n", network_count);
     if (network_count > 0) {
@@ -269,9 +329,10 @@ static void draw(void) {
         if (install_result.completed)
             printf("DONE: restart Civ7 on S2, then Load Game.\n");
     }
-    printf("\nUp/Down select  X scan  A join lobby\n");
-    printf("Y test  R loader only  ZR replace saves\n");
-    printf("WARNING: ZR deletes all single-player saves.\n");
+    printf("\n");
+    printf("X scan  A join  Up/Down select\n");
+    printf("ZR install CivSwitch  R install autoloader (kaiHEN)\n");
+    printf("Both replace the Civ7 single-player saves.\n");
     printf("B leave  + exit\n");
     consoleUpdate(NULL);
 }
@@ -327,6 +388,8 @@ int main(int argc, char **argv) {
                 ldn_initialized = R_SUCCEEDED(rc);
                 if (ldn_initialized) scan_networks();
             }
+            // An armed R / ZR keeps looking: the room may show up late.
+            auto_join_pending();
             redraw = true;
         }
         if ((keys & HidNpadButton_Y) && game_joined) {
@@ -335,24 +398,24 @@ int main(int argc, char **argv) {
             game_tested = true;
             redraw = true;
         }
-        if ((keys & HidNpadButton_R) && game_joined) {
-            game_result = game_send(true, show_progress);
-            close_station();
-            game_tested = true;
+        if ((keys & HidNpadButton_R)) {
+            if (game_joined) {
+                // Already in a lobby: install the autoloader save right here.
+                pending_action = Pending_None;
+                run_install(InstallerKind_Autoloader);
+            } else {
+                // No lobby: scan now and auto-join the only room if there is
+                // exactly one, then install without further input.
+                request_install(Pending_Autoloader);
+            }
             redraw = true;
         }
-        if ((keys & HidNpadButton_ZR) && game_joined) {
-            // Same flow as the ESP32: send the payload and the save over the
-            // live LDN link, then let the user restart the game and Load Game.
-            LdnIpv4Address host = networks[selected].nodes[0].ip_addr;
-            game_result = game_send(true, show_progress);
-            bool loader_sent = game_result.completed;
-            game_tested = true;
-            install_tested = false;
-            if (loader_sent) {
-                install_result = installer_run_over_ldn(host,
-                                                        show_install_progress);
-                install_tested = true;
+        if ((keys & HidNpadButton_ZR)) {
+            if (game_joined) {
+                pending_action = Pending_None;
+                run_install(InstallerKind_Classic);
+            } else {
+                request_install(Pending_Classic);
             }
             redraw = true;
         }
@@ -371,6 +434,13 @@ int main(int argc, char **argv) {
                     game_result = game_join(networks[selected].nodes[0].ip_addr);
                     game_tested = true;
                     game_joined = game_result.completed;
+                }
+                if (game_joined && pending_action != Pending_None) {
+                    PendingAction action = pending_action;
+                    pending_action = Pending_None;
+                    run_install(action == Pending_Classic
+                                    ? InstallerKind_Classic
+                                    : InstallerKind_Autoloader);
                 }
                 redraw = true;
             }

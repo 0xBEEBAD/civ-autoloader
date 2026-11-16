@@ -2,18 +2,24 @@
 """Generate the NRO's embedded assets from our payloads.
 
 Outputs:
-  source/chat_payload.h       core.js + UDP :9027 receiver, compressed for chat
-  source/installer_payload.h  CivSwitchFS persist bootstrap (the J stream)
-  data/save_template.bin      pristine Civ7 save template (the T stream)
+  source/chat_payload.h               core.js + UDP :9027 receiver, for chat
+  source/installer_payload.h          CivSwitchFS persist bootstrap (J stream)
+  source/installer_classic_payload.h  standard CivSwitch save installer
+  data/save_template.bin              pristine Civ7 save template (T stream)
 
 This is the same delivery as the ESP32 firmware:
 
   chat payload -> console evals core.js + receiver, binds UDP :9027
-  A<tpl>:<js>:0:0:<ip> -> T<i> template chunks, J<i> bootstrap chunks
-  console runs the persist bootstrap, writes the save, answers I:OK
+  A<tpl>:<js>:0:0:<ip> -> T<i> template chunks, J<i> installer chunks
+  console runs the selected installer, writes the save, answers I:OK
 
-No TCP, no Wi-Fi, no adapter script: the receiver's `persist` stage does the
-staging and calls installFromTemplate() itself.
+Two saves share the same template and differ only in the J stream:
+
+  persist  CivSwitchFS autoloader: FS elevation -> kaiHEN -> hbmenu
+  classic  standard CivSwitch save: Remote JS Loader on :9026 after Load Game
+
+No TCP, no Wi-Fi, no adapter script: the receiver stages the template and runs
+the installer itself.
 """
 from __future__ import annotations
 
@@ -27,6 +33,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                        # packages/transport/nro
 PROJECT = os.path.dirname(os.path.dirname(os.path.dirname(ROOT)))
 BUILD_PAYLOAD = os.path.join(PROJECT, "packages", "transport", "build-payload.js")
+CIV = os.path.join(PROJECT, "third_party", "CivSwitch")
+INSTALLER_CREATOR = os.path.join(CIV, "installer-creator")
+COMPRESS_STAGE = os.path.join(INSTALLER_CREATOR, "compress_stage.js")
+CORE_JS = os.path.join(CIV, "core.js")
 
 MAX_LINE = 1000
 
@@ -97,6 +107,83 @@ def write_installer_payload(bootstrap_path: str, template_path: str,
     return len(bootstrap)
 
 
+def write_classic_installer_payload(core_path: str, template_path: str,
+                                    out_header: str) -> int:
+    """Standard CivSwitch save: splice core.js into the save template.
+
+    This is the installer-creator flow, baked into the NRO so the ZR path can
+    install the plain save without a PC. The console evaluates the installer
+    with `window.__tpl` already staged by the UDP receiver, exactly like
+    `python install.py` does over TCP.
+    """
+    import importlib.util
+    import tempfile
+
+    spec = importlib.util.spec_from_file_location(
+        "civinstall", os.path.join(INSTALLER_CREATOR, "install.py"))
+    inst = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inst)
+
+    with open(core_path, encoding="utf-8") as fh:
+        core = fh.read().replace("\r\n", "\n")
+    with open(template_path, "rb") as fh:
+        template = fh.read()
+    if len(template) < 4096 or template[:4] != b"CIV7":
+        raise SystemExit(f"{template_path} is not a Civ7 save template")
+
+    wrapped = ("(async function() {\ntry{\n" + core +
+               "\n} catch (e) {\nawait log('EXCEPTION: ' + e.message);\n"
+               "await log(e.stack);\n}\n})();")
+
+    tmp = tempfile.mkdtemp(prefix="civclassic_")
+    try:
+        wrapped_path = os.path.join(tmp, "wrapped.js")
+        hex_path = os.path.join(tmp, "stage.hex")
+        with open(wrapped_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(wrapped)
+        run = subprocess.run(["node", COMPRESS_STAGE, wrapped_path, hex_path],
+                             capture_output=True, text=True)
+        if run.returncode != 0:
+            print(run.stdout.strip(), file=sys.stderr)
+            print(run.stderr.strip(), file=sys.stderr)
+            raise SystemExit("compress_stage.js failed")
+        print(run.stdout.strip())
+        with open(hex_path, encoding="utf-8") as fh:
+            stage_hex = fh.read().strip()
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    apply_js = (inst.BLOCK
+                .replace("__STAGER__", json.dumps(inst.STAGER))
+                .replace("__STAGE_HEX__", json.dumps(stage_hex))
+                .replace("__TPL_B64_LEN__",
+                         str(((len(template) + 2) // 3) * 4)))
+    # Report the commit back to the receiver so it can answer I:OK only when
+    # the save really landed on the card.
+    apply_js = apply_js.replace(
+        'await log("INSTALL DONE - reboot, Load Game");',
+        'globalThis.__CIVCLASSIC_DONE = true;\n'
+        'await log("INSTALL DONE - reboot, Load Game");')
+    if "__CIVCLASSIC_DONE" not in apply_js:
+        raise SystemExit("classic installer marker not found in installer-creator")
+
+    with open(out_header, "w", encoding="ascii", newline="\n") as fh:
+        fh.write("// Generated by tools/generate_assets.py -- do not edit.\n")
+        fh.write("// Standard CivSwitch save installer (installer-creator).\n")
+        fh.write("// Splices core.js into the save template as the currentTurnDate\n")
+        fh.write("// record, wipes save:/saves/Single/, writes XSTRIG.Civ7Save.\n")
+        fh.write("// Sent as the J chunk stream; the receiver stages the T chunks\n")
+        fh.write("// into window.__tpl before this runs.\n")
+        fh.write("#ifndef CIVSWITCH_CLASSIC_PAYLOAD_H\n")
+        fh.write("#define CIVSWITCH_CLASSIC_PAYLOAD_H\n\n")
+        fh.write("static const char classic_apply_js[] =\n")
+        fh.write(c_lines(apply_js.rstrip() + "\n"))
+        fh.write(";\n\n")
+        fh.write("#endif\n")
+    return len(apply_js)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cfs",
@@ -122,11 +209,15 @@ def main() -> int:
         bootstrap, template,
         os.path.join(ROOT, "source", "installer_payload.h"),
         os.path.join(ROOT, "data", "save_template.bin"))
+    classic_bytes = write_classic_installer_payload(
+        CORE_JS, template,
+        os.path.join(ROOT, "source", "installer_classic_payload.h"))
 
     print(f"chat payload: {chat} lines")
-    print(f"installer bootstrap: {apply_bytes} bytes")
+    print(f"persist installer bootstrap: {apply_bytes} bytes")
+    print(f"classic installer: {classic_bytes} bytes")
     print("wrote source/chat_payload.h, source/installer_payload.h, "
-          "data/save_template.bin")
+          "source/installer_classic_payload.h, data/save_template.bin")
     return 0
 
 

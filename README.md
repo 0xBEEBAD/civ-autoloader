@@ -144,10 +144,11 @@ reopen it, and `Load Game`.
 
 See [`packages/transport/linux/README.md`](packages/transport/linux/README.md).
 
-## 3c. Install with a Switch 1 NRO (not tested yet)
+## 3c. Install with a Switch 1 NRO
 
 Requirements: Switch 1 homebrew, `ldn_mitm` removed and the console rebooted,
-both consoles on the same Wi-Fi/LAN, Civ VII 1.0.0 on the Switch 2.
+both consoles close together (local wireless only), Civ VII 1.0.0 on the
+Switch 2.
 
 ```sh
 cd packages/transport/nro
@@ -156,8 +157,25 @@ make
 ```
 
 Copy `civ-autoloader-nx.nro` to `/sdcard/switch/` and launch it from the
-Album. Join the lobby with **A**, install the save, wait for `INSTALL DONE`,
-then close Civ VII on the Switch 2, reopen it, and `Load Game`.
+Album. The app shows two install options:
+
+```text
+civ-autoloader NX by sean v0.10
+press ZR: install CivSwitch
+press R: install autoloader (kaiHEN)
+```
+
+| Button | Save | What `Load Game` does next |
+|---|---|---|
+| **ZR** | standard CivSwitch save | CivSwitch loader is back on TCP `:9026` |
+| **R** | autoloader save | CivSwitchFS -> prepare kaiHEN -> boot hbmenu |
+
+With no lobby joined, pressing either button scans immediately and, when only
+one Civ VII room is visible, joins it and installs without further input. With
+several rooms visible, pick one with Up/Down and press **A**.
+
+After `Save installer: Persistent trigger save installed`, close Civ VII on the
+Switch 2, reopen it, and choose `Load Game`.
 
 **Warning:** this replaces every Civilization VII single-player save.
 

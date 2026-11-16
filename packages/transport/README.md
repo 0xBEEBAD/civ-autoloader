@@ -107,18 +107,24 @@ Notes:
 - `ldn/` is GPL-3.0-only (CivSwitchLDN + Kinnay's `ldn` library). Keep it in
   its own package.
 
-## Switch 1 NRO (not tested yet)
+## Switch 1 NRO
 
 A second console runs the installer as homebrew, so no PC and no `prod.keys`
 are needed.
+
+```text
+civ-autoloader NX by sean v0.10
+press ZR: install CivSwitch
+press R: install autoloader (kaiHEN)
+```
 
 Requirements:
 
 - a Switch 1 that can run `.nro` homebrew;
 - Switch 2 with Civilization VII 1.0.0 (Switch 1 edition cartridge);
-- **`ldn_mitm` removed** and the console rebooted — the app hard-blocks while
+- **`ldn_mitm` removed** and the console rebooted - the app hard-blocks while
   a MITM of `ldn:u` is resident;
-- both consoles on the same Wi-Fi/LAN for the save-upload stage;
+- both consoles close together (local wireless only, no Wi-Fi/LAN needed);
 - launch from the **Album** (applet mode). A title override works only when it
   overrides Civilization VII itself.
 
@@ -131,40 +137,53 @@ export DEVKITPRO=/opt/devkitpro
 # Assets are checked in; use them as-is
 make
 
-# or regenerate the chat payload, installer and template first
+# or regenerate the chat payload, both installers and the template first
 python3 tools/generate_assets.py
 make clean all
 ```
 
-Output: `civ-autoloader-nx.nro`.
+Output: `civ-autoloader-nx.nro`, copy it to `/sdcard/switch/`.
 
-Copy it to the SD card and run it from the Album:
+### Using it
 
-```text
-/sdcard/switch/civ-autoloader-nx.nro
-```
+1. Switch 2: start Civ VII and open
+   `MULTIPLAYER -> WIRELESS -> CREATE GAME -> HOST LOBBY`.
+2. Switch 1: launch `civ-autoloader-nx.nro` from the Album.
+3. Press **ZR** (CivSwitch save) or **R** (autoloader / kaiHEN save).
 
-Controls (from the upstream NRO):
+With no lobby joined the NRO scans immediately; when exactly one Civ VII room
+is visible it joins it and starts the install by itself. When several rooms are
+visible the action stays armed - pick one with Up/Down and press **A**, and the
+install starts right after the join.
 
 | Button | Action |
 |---|---|
-| Up / Down | select a scanned LDN lobby |
-| A | join the lobby |
-| X | rescan |
-| B | leave the lobby |
-| + | exit |
+| **ZR** | install CivSwitch save |
+| **R** | install autoloader (kaiHEN) save |
+| **X** | rescan |
+| **Up / Down** | select a scanned LDN lobby |
+| **A** | join the lobby (runs an armed install) |
+| **Y** | send a test chat line |
+| **B** | leave the lobby |
+| **+** | exit |
 
-After the lobby reports **JOINED**, install the save. This build writes the
-**persistent autoloader save**, so the next `Load Game` runs CivSwitchFS and
-kaiHEN:
+4. Wait for `Save installer: Persistent trigger save installed` and
+   `DONE: restart Civ7 on S2, then Load Game.`
+5. Switch 2: close Civ VII completely, reopen it, choose **Load Game**.
 
-1. keep the lobby open;
-2. trigger the install (the upstream NRO uses **ZR**);
-3. wait for `INSTALL DONE`;
-4. on the Switch 2: close Civ VII, reopen it, `Load Game`.
+   - **ZR** writes the standard CivSwitch save: `Load Game` brings the CivSwitch
+     loader back on TCP `:9026` for the next payload.
+   - **R** writes the autoloader save: `Load Game` runs CivSwitchFS, prepares
+     kaiHEN and boots hbmenu. The SD card must contain `hbmenu.nro` and the
+     `kaihen/` files (see [`../../sdcard/README.md`](../../sdcard/README.md)).
 
-**Warning:** like the upstream installer, this replaces every Civilization VII
-single-player save. Back up the ones you want to keep.
+**Warning:** both options replace every Civilization VII single-player save.
+Back up the ones you want to keep. Each install also needs a fresh game
+session: the chat payload replaces the game UI, so restart Civ VII between
+runs.
+
+See [`nro/README.md`](nro/README.md) for the detailed flow, the two save
+payloads and troubleshooting.
 
 ## Status and known limits
 
